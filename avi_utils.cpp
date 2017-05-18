@@ -1,3 +1,5 @@
+Note that this file is not of my authorship but was written by Lucian Wischik.
+
 
 #ifndef avi_utilscpp
 #define avi_utilscpp
