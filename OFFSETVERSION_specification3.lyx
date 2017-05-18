@@ -1,0 +1,2554 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman default
+\font_sans default
+\font_typewriter default
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize a4paper
+\use_geometry true
+\use_amsmath 1
+\use_esint 1
+\use_mhchem 1
+\use_mathdots 1
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\leftmargin 1.5cm
+\topmargin 1cm
+\rightmargin 1.5cm
+\bottommargin 2cm
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Subsection*
+Data conventions / boundary rules
+\end_layout
+
+\begin_layout Subsubsection
+Frills
+\end_layout
+
+\begin_layout Standard
+// OKay.
+ ASK // Is there instead a way to get rid of frills.
+ // We still want a constant number of tris per tri tile, # verts per vert
+ tile, // we still want a geometric correspondence between tri and vert
+ tiles.
+ // Frills then seems inevitable.? If we knock 1 off the number of tris per
+ tri tile, // that will bring down the number of tris by # tri tiles, which
+ is awkward.
+\end_layout
+
+\begin_layout Standard
+// ** So yes, we need frills.
+ **
+\end_layout
+
+\begin_layout Standard
+Frills are going to be along both the outermost and innermost boundaries.
+\end_layout
+
+\begin_layout Itemize
+// Frill has vertex 0,1 as the two different vertices.
+ 
+\end_layout
+
+\begin_layout Itemize
+// Frill has all tri neighbours set to the 1 neighbour.
+ 
+\end_layout
+
+\begin_layout Itemize
+// Frill has area = 0.
+ 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Quotes eld
+\end_inset
+
+centroid
+\begin_inset Quotes erd
+\end_inset
+
+ is on boundary ? NO:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+// So how are we going to get the corners of central cell? 
+\end_layout
+
+\begin_layout Itemize
+// Do we (i) go 1/3 along tri edge or (ii) make them the average of 2 tri
+ centroids and the vertex? 
+\end_layout
+
+\begin_layout Itemize
+Way (ii) allows us not to have to access extra information than triangles
+ in order to calculate Lap A on central cells.
+\end_layout
+
+\begin_layout Itemize
+However, if we do this then we distort central cells near the insulator.
+\end_layout
+
+\begin_layout Itemize
+And we cannot then sensibly be putting the frill centroid on the boundary.
+ That will spoil things.
+ 
+\end_layout
+
+\begin_layout Itemize
+It is better if we do not do that then.
+ // Put the frill centroid the other side of the boundary.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Try to avoid traffic of 
+\begin_inset Formula $nv$
+\end_inset
+
+ into frills or (for now) into insulator triangles -- whether by advection
+ or diffusion.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Therefore we HAVE to load the flag of the triangle that we are looking into.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+When we set 
+\begin_inset Formula $\nabla^{2}A$
+\end_inset
+
+ we first set 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ in a preliminary routine so that we do not need to detect frill neighbours
+ of domain triangles.
+\end_layout
+
+\begin_layout Itemize
+Ensure that in frills, 
+\begin_inset Formula $v=0$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsubsection
+Outermost vertex-centered cells
+\end_layout
+
+\begin_layout Itemize
+Outermost cells DO allow ingress of species and DO allow 
+\begin_inset Formula $\phi$
+\end_inset
+
+ to pump electrons back to the domain: this is via triangle minors 
+\begin_inset Formula $v$
+\end_inset
+
+ of course.
+ There is no traffic at the outer edge of the outermost cell.
+\end_layout
+
+\begin_layout Itemize
+If we choose outermost 
+\begin_inset Formula $v=0$
+\end_inset
+
+ -- which we might as well since neither 
+\begin_inset Formula $v_{r}$
+\end_inset
+
+ nor 
+\begin_inset Formula $v_{z}$
+\end_inset
+
+ has any sense in being nonzero - then we can still evolve 
+\begin_inset Formula $\partial A/\partial t$
+\end_inset
+
+ all the same.
+\end_layout
+
+\begin_layout Itemize
+When we set 
+\begin_inset Formula $\nabla^{2}A$
+\end_inset
+
+,
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+ 
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+
+\begin_inset Formula $\nabla A$
+\end_inset
+
+ or 
+\begin_inset Formula $\nabla\phi$
+\end_inset
+
+ for outermost central, we can apply boundary conditions looking outwards.
+ Likewise setting 
+\begin_inset Formula $\nabla^{2}\phi$
+\end_inset
+
+ for outermost major.
+ We can probably use 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ to create 
+\begin_inset Formula $\nabla^{2}A$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename Edges.png
+	lyxscale 50
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Insulator-crossing triangles
+\end_layout
+
+\begin_layout Standard
+Parts of triangle-centered minor cells with flag CROSSING_INS will be outside
+ the insulator and parts will be inside it.
+\end_layout
+
+\begin_layout Standard
+Terminology:
+\end_layout
+
+\begin_layout Standard
+The green cells are Major Cells which store density and temperature.
+\end_layout
+
+\begin_layout Standard
+The blue cells are Central Minors which store velocity.
+\end_layout
+
+\begin_layout Standard
+The remainder of a triangle is a Tri Minor which store velocity.
+\end_layout
+
+\begin_layout Standard
+Note that mass, momentum and heat are conserved where appropriate, but we
+ work in 
+\begin_inset Formula $v$
+\end_inset
+
+ and 
+\begin_inset Formula $T$
+\end_inset
+
+ because they are subject to spatial smoothing.
+ If we worked in 
+\begin_inset Formula $nT$
+\end_inset
+
+ we would need to do floating-point divisions every time we populate a set
+ of shared data to get the gradient of 
+\begin_inset Formula $T$
+\end_inset
+
+, so even purely from a computer efficiency perspective there was a strong
+ argument.
+\end_layout
+
+\begin_layout Standard
+The mesh continues into the insulator so that we can model 
+\begin_inset Formula $A$
+\end_inset
+
+ there, basically.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Graphics
+	filename inscross2.png
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+How to handle:
+\end_layout
+
+\begin_layout Itemize
+Insulator-crossing triangles have a 
+\begin_inset Formula $v$
+\end_inset
+
+ that is 0 for now.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+We do want 
+\begin_inset Formula $\phi$
+\end_inset
+
+ changing at vertices to be able to push electrons out.
+ In some insulator-crossing tris this means azimuthally pushing out.
+ The azimuthal gradient of 
+\begin_inset Formula $\phi$
+\end_inset
+
+ can be relevant, leaving 
+\begin_inset Formula $a_{r}=0$
+\end_inset
+
+.
+ We would get the azimuthal electric and pressure gradients from where 
+\begin_inset Formula $n,\phi$
+\end_inset
+
+ are stored at the vertices.
+\end_layout
+
+\begin_layout Itemize
+When we come to do device-azimuthal advection of 
+\begin_inset Formula $N,NT$
+\end_inset
+
+, we can try to do this using the triangle above -- though adding this branching
+ is not ideal for CUDA so we want to avoid it.
+ 
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+It IS logical to have v cells crossing a boundary so that we can decide
+ how much traffic there is at the boundary of an electrode.
+ But do we want this to be legislated 
+\begin_inset Formula $v$
+\end_inset
+
+ or evolving 
+\begin_inset Formula $v$
+\end_inset
+
+?
+\end_layout
+
+\begin_layout Itemize
+Insulator-crossing triangles perceive 
+\begin_inset Formula $\partial\phi/\partial r$
+\end_inset
+
+ and 
+\begin_inset Formula $\frac{\partial}{\partial r}\left(nT\right)$
+\end_inset
+
+ as zero, if 
+\begin_inset Formula $v$
+\end_inset
+
+ ever is allowed to evolve there.
+ Allowing nonzero 
+\begin_inset Formula $v$
+\end_inset
+
+ means we have to create domain intersection area, which can be a little
+ bit fiddly.
+\end_layout
+
+\begin_layout Itemize
+It was nice when 
+\begin_inset Formula $nv$
+\end_inset
+
+ was found in major cells that abutted the insulator, for sure.
+\end_layout
+
+\begin_layout Itemize
+Inner triangles should also have 
+\begin_inset Formula $v,n=0$
+\end_inset
+
+ so that we can do evolution of 
+\begin_inset Formula $A$
+\end_inset
+
+ without branching.
+\end_layout
+
+\begin_layout Itemize
+Phi is defined at the vertices within the domain.
+ Within insulator we would in 3D be able to define it, and there is a big
+ influence from beneath.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+However, the important thing for now is that when there is charge at the
+ nearby vertices, they can affect 
+\begin_inset Formula $v_{e}$
+\end_inset
+
+ nearby and eject the charge.
+\end_layout
+
+\end_deeper
+\begin_layout Subsubsection
+Summary
+\end_layout
+
+\begin_layout Itemize
+There should be now 5 possible tri flags: OUTER_FRILL, DOMAIN_TRIANGLE,
+ INNER_FRILL, CROSSING_INS, INNER_TRIANGLE.
+\end_layout
+
+\begin_layout Itemize
+whereas vertices can be OUTERMOST, DOMAIN_VERTEX, INNER_VERTEX, INNERMOST.
+\end_layout
+
+\begin_layout Itemize
+whereas centrals can be OUTERMOST_CENTRAL = OUTERMOST, INNERMOST_CENTRAL
+ = INNERMOST, DOMAIN_VERTEX, INNER_VERTEX
+\end_layout
+
+\begin_layout Itemize
+Do we make different flags for OUTERMOST_CENTRAL vs such as OUTER_FRILL
+ ???
+\end_layout
+
+\begin_layout Standard
+What happens for each of these, summarized for each of the 3 things: treatment
+ of A's derivs, treatment of flows, and treatment of grad phi, nT, etc:
+\end_layout
+
+\begin_layout Itemize
+In this table, 
+\begin_inset Quotes eld
+\end_inset
+
+standard
+\begin_inset Quotes erd
+\end_inset
+
+ means there is nothing to watch out for.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Tabular
+<lyxtabular version="3" rows="12" columns="4">
+<features tabularvalignment="middle">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<column alignment="center" valignment="top" width="0">
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Treatment of 
+\begin_inset Formula $A$
+\end_inset
+
+ derivs
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Momentum flows:
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Treatment of 
+\begin_inset Formula $\phi$
+\end_inset
+
+,pressure
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+OUTER_FRILL
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ set per BC
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a, 
+\begin_inset Formula $nv=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+ DOMAIN_TRIANGLE
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+ no 
+\begin_inset Formula $nv$
+\end_inset
+
+ into outer frill, ins tri
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+INNER_FRILL
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ set per BC
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a, 
+\begin_inset Formula $nv=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+INNER_TRIANGLE
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a, 
+\begin_inset Formula $nv=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+CROSSING_INS
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+FOR NOW 
+\begin_inset Formula $nv=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+FOR NOW 
+\begin_inset Formula $v=a=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Mass, heat flows:
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+OUTERMOST
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Careful use of 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ 
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Traffic with domain, not outwards
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+\begin_inset Formula $\phi$
+\end_inset
+
+ exists; 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $\nabla^{2}\phi$
+\end_inset
+
+ careful; 
+\begin_inset Formula $\nabla\left(nT\right)=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+DOMAIN_VERTEX
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+std: 
+\begin_inset Formula $v_{r}=0$
+\end_inset
+
+ prevents flow thru ins
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+Prevent Inner vertex neighs: how?
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+INNER_VERTEX
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+standard
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a, set 
+\begin_inset Formula $n=v=T=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a
+\end_layout
+
+\end_inset
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+INNERMOST
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Careful use of 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a, set 
+\begin_inset Formula $n=v=T=0$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\begin_layout Plain Layout
+n/a
+\end_layout
+
+\end_inset
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection*
+Function specifications
+\end_layout
+
+\begin_layout Itemize
+Kernel_CalculateTriMinorAreas_AndCentroids [ 0 stack frame, 0 spill stores,
+ 0 spill loads ]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec2 shared_vertex_pos[SIZE_OF_MAJOR_PER_TRI_TILE];
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Area=0.5\left|(u_{2x}+u_{1x})(u_{2y}-u_{1y})+(u_{3x}+u_{2x})(u_{3y}-u_{2y})+(u_{1x}+u_{3x})(u_{1y}-u_{2y})\right|$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Multiply by 
+\begin_inset Formula $2/3$
+\end_inset
+
+ to roughly get tri minor area.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+This is a KNOWN BUG, since we do not position minor nodes on tri edges.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+char4 perinfo contains per0,1,2 and flag.
+\end_layout
+
+\begin_layout Itemize
+If vertex0 ==vertex2 on a frill tri then we get area 0 for it.
+ 
+\end_layout
+
+\begin_layout Itemize
+For insulator triangles CROSSING_INS, we want to just set this to the area
+ intersecting the domain, and project the centroid to live on the insulator.
+ However we don't have to implement this functionality unless we allow 
+\begin_inset Formula $v\neq0$
+\end_inset
+
+ in these tris.
+ For now assume we will legislate 
+\begin_inset Formula $v=0$
+\end_inset
+
+ there.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_CalculateCentralMinorAreas [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 shared_area[SIZE_OF_TRI_TILE_FOR_MAJOR];
+\end_layout
+
+\begin_layout Itemize
+__shared__ long Indextri[MAXNEIGH_d*threadsPerTileMajor];
+\end_layout
+
+\begin_layout Itemize
+Calc area as 1/6 times sum of surrounding tri minor areas.
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+KNOWN BUG: if we position the minor nodes as average of 2 centroids and
+ corner, then the result is not exactly 1/6 of the tri minor areas.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+We use neigh_len not tri_len so for a frilled vertcell, we do not include
+ area of one of the frills, IF the numbering is correct.
+ This should not matter since frills have been assigned area 0.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_CalculateMajorAreas [ 0, 0, 0 ]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec2 shared_centroids[SIZE_OF_TRI_TILE_FOR_MAJOR]
+\end_layout
+
+\begin_layout Itemize
+__shared__ long Indextri[MAXNEIGH_d*threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ char PBCtri[MAXNEIGH_d*threadsPerTileMajor];
+\end_layout
+
+\begin_layout Itemize
+Uses 
+\begin_inset Formula $\int\left[\nabla_{x}x\right]dx$
+\end_inset
+
+ shoelace to calculate area:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+grad_x_integrated_x += 0.5*(unext.x+uprev.x)*(unext.y-uprev.y);
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Uses neigh_len and tri centroids so special code is needed for OUTERMOST
+ or INNERMOST flag.
+ We use frill centroids.
+ The result is the green area NOT the pink area due to not placing frill
+ centroids at the domain boundary.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename edgemajor.png
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Average_nT_to_tri_minors [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ nT shared_nT[SIZE_OF_MAJOR_FOR_MINOR];
+\end_layout
+
+\begin_layout Itemize
+Perform a simple average of 
+\begin_inset Formula $n$
+\end_inset
+
+ and 
+\begin_inset Formula $T$
+\end_inset
+
+ from tri corners.
+\end_layout
+
+\begin_layout Itemize
+Grabs 3 corners -- for frills you will average 2/3+1/3 ; it should not be
+ being used? I think not anyway.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+\begin_inset Formula $\nabla\left(nT\right)$
+\end_inset
+
+ at outermost should not depend on frill 
+\begin_inset Formula $n,T$
+\end_inset
+
+ values, if it is taken at all.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+In case of CROSSING_INS we only add 
+\begin_inset Formula $n,T$
+\end_inset
+
+ where 
+\begin_inset Formula $n>0$
+\end_inset
+
+.
+ We ASSUME we shall keep n=0 for all out-of-domain vertices.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename inscross.png
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+No periodic data needed.
+\end_layout
+
+\begin_layout Itemize
+In future this routine very likely needs to be a lot more complex.
+ It is probably not adequate to assume simple averaging once there is a
+ front of electrons.
+ This is the 
+\begin_inset Formula $n_{tri}$
+\end_inset
+
+ that is being used for boundary flows -- we should make a model on each
+ shard of each major cell, and the upwind shard is then the relevant one.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_GetZCurrent [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+((minor_info.flag == DOMAIN_MINOR) || (minor_info.flag == OUTERMOST_CENTRAL))
+ 
+\end_layout
+
+\begin_layout Itemize
+So insulator-crossing tris are being ignored.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Create_v_overall_and_newpos [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Runs for DOMAIN_VERTEX.
+ Put 0 otherwise, including for OUTERMOST.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula 
+\[
+v_{overall}=\frac{m_{n}n_{n}v_{n}+m_{ion}n_{ion}v_{ion}+m_{e}n_{e}v_{e}}{m_{n}n_{n}+m_{ion}n_{ion}+m_{e}n_{e}}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Average_v_overall_to_tris: [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec3 shared_v[SIZE_OF_MAJOR_FOR_MINOR];
+\end_layout
+
+\begin_layout Itemize
+((perinfo.flag == DOMAIN_TRIANGLE) || (perinfo.flag == CROSSING_INS)) 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+All other cases 
+\begin_inset Formula $v_{overall}=0$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+uses perinfo.per0,per1,per2 to handle PB rotation.
+\end_layout
+
+\begin_layout Itemize
+Perform simple average from corners.
+\end_layout
+
+\begin_layout Itemize
+For CROSSING_INS, we set the radial component to zero.
+ However we still took an average of 3 corners.
+ At best, this means we averaged with 0 from inner vertex.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Average_nnionrec_to_tris: [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ nn shared_nn[SIZE_OF_MAJOR_PER_TRI_TILE];
+\end_layout
+
+\begin_layout Itemize
+((perinfo.flag == DOMAIN_TRIANGLE) || (perinfo.flag == CROSSING_INS)) 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+All other cases 
+\begin_inset Formula $n_{ionise}=0$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+nn_out.n_ionise = THIRD*(nn0.n_ionise+nn1.n_ionise+nn2.n_ionise);
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_RelAdvect_nT [72, 120, 160]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec2 p_tri_centroid[SIZE_OF_TRI_TILE_FOR_MAJOR]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_nv_shared[SIZE_OF_TRI_TILE_FOR_MAJOR]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64 p_T_shared[SIZE_OF_TRI_TILE_FOR_MAJOR];
+\end_layout
+
+\begin_layout Itemize
+__shared__ long Indextri[MAXNEIGH_d*threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+Each species is done in sequence, retaining the position data etc.
+\end_layout
+
+\begin_layout Itemize
+if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) --> 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+because we do allow traffic in/out of Outermost;
+\end_layout
+
+\begin_layout Itemize
+Make sure no traffic at the back of Outermost.
+ - tick
+\end_layout
+
+\begin_layout Itemize
+Make sure no traffic through insulator.
+ As long as 
+\begin_inset Formula $v_{r}=0$
+\end_inset
+
+ in tris, no problem.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+This is to avoid a situation where a domain vertex has to test whether it
+ is looking into an OUTERMOST neighbour.
+ 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename Edges.png
+	lyxscale 50
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+We use info.neigh_len but we are dealing with triangle pairs to look at edges
+ for advection.
+ Therefore at the outermost edge, we need the numbering where this will
+ exclude the 
+\begin_inset Quotes eld
+\end_inset
+
+edge
+\begin_inset Quotes erd
+\end_inset
+
+ between two frills.
+ 
+\end_layout
+
+\begin_layout Itemize
+Uses 
+\series bold
+info.has_periodic
+\series default
+ for PB rotation of tri 
+\begin_inset Formula $nv$
+\end_inset
+
+, 
+\begin_inset Formula $nvT$
+\end_inset
+
+ data.
+\end_layout
+
+\begin_layout Itemize
+Accumulate:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+f64 flow = 0.5*h*((nv1+nv2).dot(edgenormal));
+\end_layout
+
+\begin_layout Itemize
+mass -= flow;
+\end_layout
+
+\begin_layout Itemize
+flow = 0.5*h*((nvT1+nvT2).dot(edgenormal));
+\end_layout
+
+\begin_layout Itemize
+heat -= flow;
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+mass += nTsrc.n*area_old; heat += nTsrc.n*nTsrc.T*area_old; 
+\end_layout
+
+\begin_layout Itemize
+nT_out.n = mass/area_new; nT_out.T = heat/mass;
+\end_layout
+
+\begin_layout Itemize
+Compressive: 
+\begin_inset Formula $T_{out}=T_{out}\left(1-\frac{2}{3}\frac{\left(n_{out}-n_{src}\right)}{n_{src}}-\frac{1}{9}\frac{\left(n_{out}-n_{src}\right)^{2}}{n_{src}^{2}}\right)$
+\end_inset
+
+ 
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Populate_A_frill
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Detect where flag == OUTER_FRILL || flag == INNER_FRILL ;
+\end_layout
+
+\begin_layout Itemize
+Look domain-inwards to neighbour and populate accordingly.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Compute_Grad_A_minor_antiadvect: [144, 480, 748] -- not great.
+ Note (144-32)/8=14
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec3 A_tri[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 tri_centroid[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec3 A_vert[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 vertex_pos[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long IndexTri[SIZE_OF_MAJOR_PER_TRI_TILE*MAXNEIGH_d]; 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename GradA.png
+
+\end_inset
+
+We move around taking 6 quadrilaterals.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula 
+\[
+\int\nabla A_{y}+=\left(\frac{1}{12}\left(A_{prev,y}+A_{next,y}\right)+\frac{5}{12}\left(A_{0y}+A_{out,y}\right)\right)\perp
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $\perp$
+\end_inset
+
+ is 90 degrees from the green edge line shown on the figure.
+ 
+\end_layout
+
+\begin_layout Itemize
+Periodic rotation flags for corners and for neighbour centroids come from
+ two CHAR4 objects that are loaded.
+\end_layout
+
+\begin_layout Itemize
+Looking out into frills we have to apply Boundary Conditions:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Set 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ beforehand and it solves a lot of problems.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+if ((perinfo.flag == DOMAIN_TRIANGLE) || (perinfo.flag == CROSSING_INS))
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+We did not apply this test to most of the code though!!! Try both ways.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+=----------------------------------------------------------
+\end_layout
+
+\begin_layout Itemize
+For half the threads, we carry on to then have a go at the central grad
+ A.
+ [ Note that even if we comment this part, we do not dramatically reduce
+ the overspend on registers and local memory.
+ ]
+\end_layout
+
+\begin_layout Itemize
+Periodic state for triangle is used to infer whether tri centroid and A
+ need to be rotated.
+\end_layout
+
+\begin_layout Itemize
+For OUTERMOST, we will not be moving the vertex so can simply write if (info.flag
+ == DOMAIN_VERTEX)
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename gradAcentral.png
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Use 
+\begin_inset Formula $\frac{1}{12}\left(A_{1}+A_{3}\right)+\frac{5}{12}\left(A_{0}+A_{2}\right)$
+\end_inset
+
+ as the average of 
+\begin_inset Formula $A$
+\end_inset
+
+ on the edge of the central polygon.
+\end_layout
+
+\begin_layout Itemize
+p_A_out[BEGINNING_OF_CENTRAL + index].z += anti_Advect.z = h*v_overall.dot(gradAz);
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor: [216, 1536, 2024]
+ -- terrible?
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec3 A_tri[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 tri_centroid[threadsPerTileMinor];
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec3 A_vert[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 vertex_pos[SIZE_OF_MAJOR_PER_TRI_TILE];
+\end_layout
+
+\begin_layout Itemize
+__shared__ short shared_per[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long IndexTri[SIZE_OF_MAJOR_PER_TRI_TILE*MAXNEIGH_d];
+\end_layout
+
+\begin_layout Itemize
+Similar routine to Grad A antiadvect.
+ For some reason comes out much worse for local memory footprint, even if
+ you remove B.
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+coeff = ((u2.y-u0.y)*edgenormal.x + (u0.x-u2.x)*edgenormal.y)/shoelace; 
+\end_layout
+
+\begin_layout Itemize
+LapA.z += coeff*(A0.z-A_out.z); // A_1~pos0 A_2~pos1 
+\end_layout
+
+\begin_layout Itemize
+coeff = ((pos1.y-ourpos.y)*edgenormal.x + (ourpos.x-pos1.x)*edgenormal.y)/shoelace;
+ 
+\end_layout
+
+\begin_layout Itemize
+LapA.z += coeff*(A_1.z-A_2.z);
+\end_layout
+
+\begin_layout Itemize
+B.x += (TWELTH*(A_1.z+A_2.z)+FIVETWELTHS*(A0.z+A_out.z))*edgenormal.y; 
+\end_layout
+
+\begin_layout Itemize
+B.y += -(TWELTH*(A_1.z+A_2.z)+FIVETWELTHS*(A0.z+A_out.z))*edgenormal.x; 
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+At the outer and inner edge of memory, we apply BC's to create Lap A since
+ this affects whether waves of A are flowing in and out.
+ 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename LapAfrill.png
+	lyxscale 60
+	scale 60
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+We have to set 
+\begin_inset Formula $A_{frill}$
+\end_inset
+
+ according to the BC before we call this kernel.
+ In order to do that we want to have some idea which tiles contain frill
+ triangles.
+\end_layout
+
+\begin_layout Itemize
+It seems best for outermost central that we allow 
+\begin_inset Formula $A$
+\end_inset
+
+ to evolve with Lap A but in order to do that, we assume that we take a
+ trapezoid and the BC is applied along the outer edge of the trapezoid.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Does this mean we should let 
+\begin_inset Formula $J$
+\end_inset
+
+ be defined at outermost vertices? We should assume that 
+\begin_inset Formula $J=0$
+\end_inset
+
+ there.
+ Assume 
+\begin_inset Formula $v=0$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+For 
+\begin_inset Formula $A_{xy}$
+\end_inset
+
+ the BC is not that the outer edge is ignored.
+ It is something like that 
+\begin_inset Formula $A_{xy}$
+\end_inset
+
+ decreases as 
+\begin_inset Formula $\frac{1}{r}$
+\end_inset
+
+, and at the innermost edge decreases inward as if 
+\begin_inset Formula $A_{xy}/r=\mbox{constant}$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+At insulator, 
+\begin_inset Formula $A$
+\end_inset
+
+ is treated the same way as everywhere else.
+ It is defined inside and outside the insulator and we can work out 
+\begin_inset Formula $B$
+\end_inset
+
+ and Lap 
+\begin_inset Formula $A$
+\end_inset
+
+ at the insulator tri centroids.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+What about evolving 
+\begin_inset Formula $\frac{dA}{dt}$
+\end_inset
+
+ there? It would not be wrong to treat in a weak way: allow that 
+\begin_inset Formula $dA/dt$
+\end_inset
+
+ is affected according to the proportion of the triangle that lies within
+ domain.
+ Let 
+\begin_inset Formula $v$
+\end_inset
+
+ be defined nonzero (
+\begin_inset Formula $v_{r}=0$
+\end_inset
+
+) at the insulator.
+\end_layout
+
+\end_deeper
+\end_deeper
+\begin_layout Itemize
+Kernel_Rel_advect_v_tris : [128, 172, 280]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec2 tri_centroid[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec3 v_tri[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 n_vrel_tri[threadsPerTileMinor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 n_vrel_central[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec3 v_central[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 vertex_pos[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+nvrel.x = n_own*(v_own.x - v_overall.x);
+\end_layout
+
+\begin_layout Itemize
+if (perinfo.flag == DOMAIN_TRIANGLE).
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+4 possible tri flags: OUTER_FRILL, DOMAIN_TRIANGLE, INNER_FRILL, CROSSING_INS.
+\end_layout
+
+\begin_layout Itemize
+whereas vertices can be OUTERMOST, DOMAIN_VERTEX, INNER_VERTEX, INNERMOST.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Periodic handling is peculiar: CHAR4 perneigh = p_tri_per_neigh[index];
+ which stores whether neighbour triangle is relatively rotated.
+\end_layout
+
+\begin_layout Itemize
+Boundaries:
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Do not flow momentum out into a frill ...
+ repeat diagram:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename Edges.png
+	lyxscale 50
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Do not flow momentum through the insulator: test for 2 CROSSING_INS triangles.
+ Should that be unnecessary if both have 
+\begin_inset Formula $v_{r}=0$
+\end_inset
+
+? Check that the flow will come out zero.
+\end_layout
+
+\begin_layout Itemize
+SO FAR NO EFFORT MADE to actually prevent momentum from disappearing these
+ ways.
+ 
+\end_layout
+
+\end_deeper
+\end_deeper
+\begin_layout Itemize
+Kernel_Rel_advect_v_central : [56, 52, 56]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64_vec2 tri_centroid[SIZE_OF_TRI_TILE_FOR_MAJOR]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec3 v_tri[SIZE_OF_TRI_TILE_FOR_MAJOR];
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 n_vrel_tri[SIZE_OF_TRI_TILE_FOR_MAJOR]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long IndexTri[threadsPerTileMajor*MAXNEIGH_d]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ char PBCtri[threadsPerTileMajor*MAXNEIGH_d]; 
+\end_layout
+
+\begin_layout Itemize
+PBCtri being preferred to having shared_per for each triangle.
+\end_layout
+
+\begin_layout Itemize
+(info.flags == DOMAIN_VERTEX) 
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Compute_grad_phi_Te_centrals : [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 p_phi_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64 p_Te_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_vertex_pos_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long indexneigh[MAXNEIGH_d*threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+(info.flag == DOMAIN_VERTEX)
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_GetThermalPressureCentrals : [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 p_nT_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_vertex_pos_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long indexneigh[MAXNEIGH_d*threadsPerTileMajor];
+\end_layout
+
+\begin_layout Itemize
+(info.flag == DOMAIN_VERTEX)
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Compute_grad_phi_Te_tris [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 p_phi_shared[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64 p_Te_shared[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_vertex_pos_shared[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+(tri_info.flag == DOMAIN_TRIANGLE)
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Get_Lap_phi_on_major [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 p_phi_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_vertex_pos_shared[threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ long Indexneigh[MAXNEIGH_d*threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ char PBCneigh[MAXNEIGH_d*threadsPerTileMajor]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 tri_centroid[SIZE_OF_TRI_TILE_FOR_MAJOR]; 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Graphics
+	filename lapphifrill.png
+	lyxscale 50
+	scale 50
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+KNOWN BUG: It is not getting it right in case that the major cell abuts
+ the insulator, because it is assuming that every centroid is at 1/3 simple
+ average.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_GetThermalPressureTris [0, 0, 0]
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+__shared__ f64 p_nT_shared[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+__shared__ f64_vec2 p_vertex_pos_shared[SIZE_OF_MAJOR_PER_TRI_TILE]; 
+\end_layout
+
+\begin_layout Itemize
+Multiple times: (tri_info.flag == DOMAIN_TRIANGLE) 
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Kernel_Advance_Antiadvect_phi,phidot [0, 0, 0]
+\end_layout
+
+\begin_layout Itemize
+Kernel_Antiadvect_A_allminor [0, 0, 0] - takes grad A as input
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset line
+LatexCommand rule
+offset "0.5ex"
+width "100col%"
+height "1pt"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Newpage pagebreak
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+.
+ Advance 
+\begin_inset Formula $\frac{\partial\phi}{\partial t}$
+\end_inset
+
+ to half-time using 
+\begin_inset Formula $\nabla^{2}\phi_{k}$
+\end_inset
+
+ and advance 
+\begin_inset Formula $\phi$
+\end_inset
+
+ to half-time using that updated 
+\begin_inset Formula $\frac{\partial\phi}{\partial t}$
+\end_inset
+
+.
+ Remember we do not improve the advance method to a corrector in this version.
+\end_layout
+
+\begin_layout Itemize
+.
+ Advance 
+\begin_inset Formula $A$
+\end_inset
+
+ to half-time using 
+\begin_inset Formula $\frac{\partial A}{\partial t}_{k}$
+\end_inset
+
+.
+ 
+\begin_inset Formula $A$
+\end_inset
+
+ is trapezoidal advanced, 
+\begin_inset Formula $\phi$
+\end_inset
+
+ is midpoint but we inconsistently do a fwd Euler step of it to create 
+\begin_inset Formula $\nabla^{2}\phi_{1/2}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+.
+ Compute grad phi 1/2, Lap A 1/2, B 1/2
+\end_layout
+
+\begin_layout Itemize
+.
+ Calculate half-time minor areas and estimated densities.
+ (We do need densities now...)
+\end_layout
+
+\begin_layout Itemize
+.
+ Do some species advection.
+ Compressive heating.
+ This is both for major and for minor cells!
+\end_layout
+
+\begin_layout Itemize
+.
+ Calculate thermal pressures at half time.
+ This is for all minor cells, where we want to do acceleration.
+\end_layout
+
+\begin_layout Itemize
+.
+ Midpoint step (feint) applies on all minor cells.
+ Here we use shared mem only for .
+ We can choose to synchronize threads only after submitting both types of
+ routines.
+\end_layout
+
+\begin_layout Itemize
+IS IT POSSIBLE to make an array that contains both the triangle minors and
+ the others? NOT in general that useful?? Well it is though when you come
+ to the midpoint routine.
+ Let's be very careful here.
+ Maybe there IS a way.
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Problem with this - to update 
+\begin_inset Formula $nv$
+\end_inset
+
+, we need to be taking grad 
+\begin_inset Formula $\phi$
+\end_inset
+
+ on triangles.
+ Then we have a thread per triangle, and store 
+\end_layout
+
+\begin_layout Itemize
+Better to make one list but not contiguous.
+ There is the same data but triangle minors are contiguous and central minors
+ are contiguous list.
+ 
+\end_layout
+
+\begin_layout Itemize
+To get Lap A, on edge minor, we are looking at the data from 3 centrals
+ and 3 edge minors.
+ How do we get at that? Load in 2 lists - the minor tile and the major tile
+ corresponding centrals.
+\end_layout
+
+\begin_layout Itemize
+To get v for v_overall at vertices, load from centrals list.
+ Save to corresp list, then it is gathered by each triangle.
+\end_layout
+
+\begin_layout Itemize
+Data structure: minor {nv, area} ; major {n,nT,} (wtf not nT if we use nv...
+ such a sucker for changing things up though.
+ My midpt equation is written for v_e.).
+\end_layout
+
+\begin_layout Itemize
+When we collect current, run threads for ALL minors.
+\end_layout
+
+\end_deeper
+\begin_layout Enumerate
+TO DO NOW: Have a look and note down trap vs midpoint in the scheme:
+\end_layout
+
+\begin_deeper
+\begin_layout Enumerate
+A is trapezoidal, 
+\begin_inset Formula $\phi$
+\end_inset
+
+ midpoint.
+ 
+\begin_inset Formula $\frac{\partial\phi}{\partial t}$
+\end_inset
+
+ trapezoidal.
+\end_layout
+
+\begin_layout Enumerate
+But using explicit ticked-forward 
+\begin_inset Formula $\phi$
+\end_inset
+
+ towards 
+\begin_inset Formula $\frac{\partial\phi}{\partial t}$
+\end_inset
+
+.
+ There may be a more sensible way than that? 
+\end_layout
+
+\begin_deeper
+\begin_layout Enumerate
+For a more advanced method, try something approaching a backward-ticked
+ 
+\begin_inset Formula $\nabla^{2}\phi_{1/2}$
+\end_inset
+
+ towards 
+\begin_inset Formula $\frac{\partial\phi}{\partial t}$
+\end_inset
+
+.
+ That makes an ODE though ...
+ maybe something like
+\begin_inset Formula 
+\[
+\phi_{1/2}=\phi+\frac{h}{2}\left(\frac{\partial\phi}{\partial t}_{k}+\frac{h}{2}c^{2}\left(\nabla^{2}\phi_{k}+4\pi\rho_{1/2}[?]\right)\right)
+\]
+
+\end_inset
+
+-- at any rate mix it up a bit, because midpoint 
+\begin_inset Formula $\phi$
+\end_inset
+
+ does not feel like the halfway one should be an Euler step from 
+\begin_inset Formula $\phi_{k}$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\end_deeper
+\begin_layout Enumerate
+TO DO NOW: Have a look and ask, would it be easy to rewrite the midpoint
+ advance for 
+\begin_inset Formula $n_{s}v_{s}$
+\end_inset
+
+ instead of 
+\begin_inset Formula $v_{s}$
+\end_inset
+
+?
+\end_layout
+
+\begin_layout Paragraph*
+The matter of 
+\begin_inset Formula $\left\{ n,v\right\} $
+\end_inset
+
+vs 
+\begin_inset Formula $nv$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+============-
+\end_layout
+
+\begin_layout Standard
+nv can be better/worse because 
+\end_layout
+
+\begin_layout Enumerate
+It is conserved.
+ <--- but we know how to conserve mom under advection if using 
+\begin_inset Formula $n,v,T$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+We can still create grad v on the fly, if we have n's estimate stored.
+ <--- yes but it requires a division.
+ 
+\end_layout
+
+\begin_layout Enumerate
+We use n's estimate to decide the effect of grad phi ...
+ equivalent with multiplying against estimate when we advect the electrons.
+ NOTE that conductivity is only weakly dependent on 
+\begin_inset Formula $n$
+\end_inset
+
+ because of the cancellation with 
+\begin_inset Formula $n$
+\end_inset
+
+ in 
+\begin_inset Formula $\nu$
+\end_inset
+
+ --- that WOULD be a strong argument if our timestep was long enough for
+ much resistivity to apply, and is perhaps a good argument as regards what
+ actual current ought to flow.
+ <----- but in reality not strong argument
+\end_layout
+
+\begin_layout Enumerate
+It is what is used for the advection.
+ <----- true ...
+ but loading 1 extra value we can recreate nv there.
+\end_layout
+
+\begin_layout Enumerate
+We can directly add due to thermal pressure ....
+ but with 
+\begin_inset Formula $v$
+\end_inset
+
+ we directly add due to grad 
+\begin_inset Formula $\phi$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+nv seems like the more relevant variable than v: we are playing with current
+ and charge, more than anything.
+ (This is true but not material.)
+\end_layout
+
+\begin_layout Enumerate
+We need to do relative advection 
+\begin_inset Formula $n_{s}\left(v_{s}-v_{overall}\right)$
+\end_inset
+
+ which is difficult with 
+\begin_inset Formula $nv$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+Conclusion is to use 
+\begin_inset Formula $v$
+\end_inset
+
+ as variable.
+ We can try hard to add the correct amount of momentum when mom is changing.
+\end_layout
+
+\begin_layout Paragraph
+Offsets create an issue for 3D.
+\end_layout
+
+\begin_layout Standard
+Let's consider a couple of things we could do.
+\end_layout
+
+\begin_layout Standard
+vxy in the plane has to be in a tube itself.
+ We need to advect and diffuse vxy vertically.
+\end_layout
+
+\begin_layout Standard
+If we just stuff v_xyz into completely offset cells --- above triangles,
+ here is a problem, the same triangles do not even exist in the next mesh
+ sometimes.
+\end_layout
+
+\begin_layout Standard
+What then do we do?
+\end_layout
+
+\begin_layout Standard
+=
+\end_layout
+
+\begin_layout Standard
+Why do we insist on tubes at all? Why not prisms that meet a number of other
+ prisms in some messy way?
+\end_layout
+
+\begin_layout Standard
+Tetrahedralization somehow determines what is going to be connected.
+\end_layout
+
+\begin_layout Standard
+Somehow some intelligent way of tearing when we get too far from a linkup
+ making sense.
+\end_layout
+
+\begin_layout Standard
+Chop off corners of tetrahedron --> truncated tetrahedron.
+ It will have hexagonal and triangular sides.
+\end_layout
+
+\begin_layout Standard
+=
+\end_layout
+
+\begin_layout Standard
+There probably are ways.
+ I clearly want to deal with offset v in 2D so we should deal with this.
+ Probably we do want the elegant 3D way that puts v_xyz on the same place.
+ Presently edge lines intersect 2 minor cells.
+ We would find that edge faces of the major cells would intersect multiple
+ minor cells.
+\end_layout
+
+\begin_layout Standard
+Here is a thought.
+ We should try to align the connections between the planes according to
+ which direction current is flowing.
+ We would like there to be faces transverse to the current flow when possible.
+ Then we can even try to reorient the planes gradually so that this is becoming
+ transverse to the plane also.
+\end_layout
+
+\begin_layout Standard
+=========
+\end_layout
+
+\begin_layout Paragraph
+BACK TO 2D --- 
+\end_layout
+
+\end_body
+\end_document

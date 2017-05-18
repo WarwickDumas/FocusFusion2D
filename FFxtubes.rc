@@ -1,0 +1,192 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource."
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_F2DVALS             ICON                    "f2dvals.ico"
+IDI_SMALL               ICON                    "small.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU 
+BEGIN
+    POPUP "File"
+    BEGIN
+        MENUITEM "Load",                        ID_FILE_LOAD
+        MENUITEM "Save",                        ID_FILE_SAVEBINARY
+        MENUITEM "Save text",                   ID_FILE_SAVETEXT
+        MENUITEM "Load camera",                 ID_FILE_LOADCAMERA
+        MENUITEM "Save camera",                 ID_FILE_SAVECAMERA
+        MENUITEM "Exit",                        ID_FILE_EXIT
+    END
+    POPUP "Initialise"
+    BEGIN
+        MENUITEM "Ionisation steps",            ID_INITIALISE_IONISATIONSTEPS
+        MENUITEM "Run Jz Az Ez solver",         ID_INITIALISE_RUNPOTENTIALSSOLVER
+    END
+    POPUP "Run"
+    BEGIN
+        MENUITEM "STOP",                        ID_RUN_STOP
+        MENUITEM "Simulation steps",            ID_RUN_SIMULATIONSTEPS
+    END
+    POPUP "Display"
+    BEGIN
+        MENUITEM "Neutral",                     ID_DISPLAY_NEUT
+        MENUITEM "Ion",                         ID_DISPLAY_ION
+        MENUITEM "Electron",                    ID_DISPLAY_ELECTRON
+        MENUITEM "Total",                       ID_DISPLAY_TOTAL
+        MENUITEM "JzAzBxyEz",                   ID_DISPLAY_JZAZBXYEZ
+        MENUITEM "JxyAxyBzExy",                 ID_DISPLAY_JXYAXYBZEXY
+        MENUITEM "ExyRhoPhiJxy",                ID_DISPLAY_EXYRHOPHIJXY
+        MENUITEM "SigmaEJ",                     ID_DISPLAY_SIGMAEJ
+    END
+    POPUP "Help"
+    BEGIN
+        MENUITEM "About",                       ID_HELP_ABOUT
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Accelerator
+//
+
+IDC_F2DVALS ACCELERATORS 
+BEGIN
+    "?",            ID_HELP_ABOUT,          ASCII,  ALT
+    "/",            ID_HELP_ABOUT,          ASCII,  ALT
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 278, 101
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Plasma filament simulation"
+FONT 10, "MS Sans Serif", 400, 0, 0x0
+BEGIN
+    CTEXT           "Lagrangian-type Dense Plasma Focus Filament Simulation",IDC_STATIC,29,15,226,8,SS_NOPREFIX
+    CTEXT           "by Warwick Michael Dumas",IDC_STATIC,29,28,226,8
+    DEFPUSHBUTTON   "OK",IDOK,117,80,50,14,WS_GROUP
+    CTEXT           "for Lawrenceville Plasma Physics",IDC_STATIC,28,40,227,8
+    CTEXT           "2014-2016",IDC_STATIC,28,52,227,8
+END
+
+IDD_DIALOG1 DIALOGEX 0, 0, 132, 86
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Set up a run"
+FONT 11, "Arial", 400, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,75,65,50,14
+    EDITTEXT        IDC_EDIT1,31,19,77,17,ES_AUTOHSCROLL,WS_EX_STATICEDGE
+    LTEXT           "How many steps to run?",IDC_STATIC,7,7,102,11
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_ABOUTBOX, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 269
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 94
+    END
+
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 125
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 79
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_APP_TITLE           "f2dvals"
+END
+
+STRINGTABLE 
+BEGIN
+    IDC_F2DVALS             "F2DVALS"
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
