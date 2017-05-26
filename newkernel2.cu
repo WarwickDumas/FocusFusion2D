@@ -337,18 +337,23 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 	
 	// We do not know what order the corners are given in.
 	// So use fabs:
-	f64 area = fabs(0.5*(
-		   (pos2.x+pos1.x)*(pos2.y-pos1.y)
-		 + (pos3.x+pos2.x)*(pos3.y-pos2.y)
-		 + (pos1.x+pos3.x)*(pos1.y-pos2.y)
-		));
-	
+	f64 area = fabs(0.5*(   (pos2.x+pos1.x)*(pos2.y-pos1.y)
+						 + (pos3.x+pos2.x)*(pos3.y-pos2.y)
+						 + (pos1.x+pos3.x)*(pos1.y-pos2.y)
+					)	);
 	f64_vec2 centroid = THIRD*(pos1+pos2+pos3);
 	
-	if ((perinfo.flag == OUTER_FRILL) || (perinfo.flag == INNER_FRILL))
+	if (perinfo.flag == OUTER_FRILL) 
 	{
 		f64_vec2 temp = 0.5*(pos1+pos2); 
-		temp.project_to_radius(centroid, FRILL_CENTROID_RADIUS);
+		temp.project_to_radius(centroid, FRILL_CENTROID_OUTER_RADIUS);
+		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
+	}
+	
+	if (perinfo.flag == INNER_FRILL)
+	{
+		f64_vec2 temp = 0.5*(pos1+pos2); 
+		temp.project_to_radius(centroid, FRILL_CENTROID_INNER_RADIUS);
 		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
 	}
 	

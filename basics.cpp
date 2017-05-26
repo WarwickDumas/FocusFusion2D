@@ -10,6 +10,9 @@
 
 smartlong GlobalVertexScratchList;
 
+extern real FRILL_CENTROID_OUTER_RADIUS;
+extern real FRILL_CENTROID_INNER_RADIUS;
+
 //real const minimum_pressure_SD_at_1e18_sq = minimum_pressure_SD_at_1e18*minimum_pressure_SD_at_1e18;
 //real const min_variance_heat = min_SD_heat*min_SD_heat;
 
@@ -960,8 +963,17 @@ Vector2 Triangle::RecalculateCentroid()
 		// Modify the centre to be the centre of the intersection of insulator
 		GetCentreOfIntersectionWithInsulator(cent);
 	}
+	if (u8domain_flag == OUTER_FRILL) {
+		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU
+		temp.project_to_radius(cent, FRILL_CENTROID_OUTER_RADIUS);
+	};
+	if (u8domain_flag == INNER_FRILL) {
+		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU
+		temp.project_to_radius(cent, FRILL_CENTROID_INNER_RADIUS);
+	};
 	return cent;
 }
+
 
 Vector2 Triangle::GetContiguousCent_AssumingCentroidsSet(Vertex * pVertex)
 {

@@ -1,4 +1,10 @@
 
+
+// Project needs to include
+// newkernel2.obj
+// newkernel2.cu.obj
+
+
 // DropJxy.cpp, qd cpp files, avi_utils.cpp
 
 // meshutil.cpp, mesh.cpp, basics.cpp, surfacegraph_tri.cpp, vector_tensor.cpp
@@ -22,6 +28,8 @@
 
 // Global variables:
 // =================
+
+real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 
 float xzscale;
 
@@ -1060,7 +1068,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// Ensure that display menu items are consecutive IDs.
 
 		if ((wmId >= ID_DISPLAY_NEUT) && 
-			(wmId < ID_DISPLAY_NEUT + NUMAVI))
+			(wmId <= ID_DISPLAY_NEUT + 7))
 		{
 			//if (wmId < ID_DISPLAY_NEUT + 4) 
 			GlobalSpeciesToGraph = wmId;
@@ -1432,10 +1440,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				printf("\n\n16000: elec.mom.z %1.8E \n\n",pX->X[16000].Elec.mom.z);
 
 #ifndef NOCUDA
-				Systdata_host.InvokeHost(pX->numVertices);
-				pX->Populate_this_fromSystdata( &Systdata_host ) ;
 				
-				PerformCUDA_Advance (
+				pX->CreateTilingAndResequence(pXnew);
+				// Debug that...
+
+				Systdata_host.InvokeHost(pX->numVertices);
+				pXnew->PopulateSystdata_from_this(&Systdata_host);
+
+				// To debug:
+				pXnew->Populate_this_fromSystdata( &Systdata_host ) ;
+				
+				/*PerformCUDA_Advance (
 					&Systdata_host, 
 					pX->numVertices,
 					1e-13, 
@@ -1444,11 +1459,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					pX->numEndZCurrentRow,
 					&Systdata_host,
 					evaltime 
-				);
+				);*/
 				evaltime += 1.0e-13;
 				printf("evaltime %1.8E\n",evaltime);
 #endif
-				pX->Populate_this_fromSystdata(&Systdata_host);
+				pXnew->Populate_this_fromSystdata(&Systdata_host);
 				printf("That's it.\n");
 				
 				// End of test.
@@ -1735,9 +1750,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							
 		};
 		
-		PlanViewGraphs1(*pX);
+		//PlanViewGraphs1(*pX);
 
-		//RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
+		RefreshGraphs(*pX,GlobalSpeciesToGraph); // sends data to graphs AND renders them
 		Direct3D.pd3dDevice->Present( NULL, NULL, NULL, NULL );
 			
 		break;
@@ -2229,8 +2244,8 @@ void TriMesh::Populate_this_fromSystdata( Systdata * pSystdata )
 {
 	this->EzTuning.x[0] = pSystdata->EzTuning;
 
-	long izNeigh[128];
-	long i;
+	//long izNeigh[128];
+	//long i;
 	long iVertex;
 	Vertex * pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
@@ -2294,16 +2309,547 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// And we make this block contiguous to previous ...
 	// To create bottom row simultaneously will prevent just spreading out horizontally.
 	
-	// 2. 
+	// Let's suppose we start by creating all these horizontal blocks, knowing how wide we
+	// want them to be.
+	// Then, suppose we follow on to each of these? Might not always be able to.
+	// Also a block *might* get trapped in --- in that case the next point has to find where to go.
+
+	// We probably MIGHT like the rows of blocks not to end up offset. Or worse, with some blocks squatter than others.
+	// Well, it doesn't really matter if it's offset, so we could actually go with that.
+		
+	// ie look to place first point of run where multiple previous blocks meet.
 	
-	// 
+	// *. Make next point of tile, where there are the greatest number of connections.
+	// Given same # of connections to more points, use earliest point of tile.
+	// Or -- using earliest point, choose those with greatest number of connections -- to this tile or to all?
+
+	int spacing = (int)(sqrt((real)threadsPerTileMajor));
+	// If anything, LESS wide than it wants to be.
+	int numTilesOnGo = this->numInnermostRow/spacing;
+	printf("numInnermostRow %d tile width %d remainder %d \n",
+		numInnermostRow,spacing,numInnermostRow % spacing);
 	
+	// Distribute remainder through tiles! :
+	int Tileskips_between_remainder_points = numTilesOnGo/(numInnermostRow % spacing);
 	
+	printf("Tileskips between remainder +1's %d remainder %d\n",
+		Tileskips_between_remainder_points, 
+		numInnermostRow % Tileskips_between_remainder_points);
+		
+	// Note: Using greatest # connections AVOIDS accidental holes.
+	// But so does using the full neighbour-based spread. ??
+	// What if blocks meet... and we never get to do neighbours of those points.
+
+	// ** What if we end block halfway through a neighbour list. Then we want to
+	// have chosen wisely which points to use from that list.
+
+	// Take array for resequence:
+	long index[numTilesMajor][threadsPerTileMajor]; 
+	long caret[numTilesMajor]; // checked up to caret, caret is the first one that can have a free neighbour.
+	long iVertex, i, iTile;
+	// Do we want to do this? Well, 
+	// we can write on the vertices their search flags.
+	// Then just hold on to the index of the earliest point for which we did not
+	// exhaust the expansion to neighbours.
+	// So we expand around each point -- remembering initial seq is random ...
+	
+	Vertex * pVertex = X;
+	for (iVertex = 0; iVertex < numVertices;iVertex++)
+	{
+		pVertex->iVolley = -1;
+		++pVertex;
+	}
+
+	memset(index,0,sizeof(long)*numTilesMajor*threadsPerTileMajor);
+	int ctr = 0;
+	i = 0; // let PBC go through 1st tile.
+	iTile = 0;
+	for (i = 0; i <= numInnermostRow-spacing;i += spacing)
+	{
+		index[iTile][0] = i;
+		X[i].iVolley = iTile;
+		printf("i %d ; ",i);
+		if (iTile % Tileskips_between_remainder_points == 0)
+		{
+			ctr++;
+			if (ctr <= numInnermostRow % spacing) 
+				i++; // extra move on 1
+		};
+		iTile++;
+	}
+	printf("\n");
+	printf("final distance %d spacing %d \n",numInnermostRow-i+spacing, spacing);
+	
+	// iTile is now number of tiles along innermost row.
+	numTilesOnGo = iTile;
+	
+	// What if we seeded whole thing: seeds kind of repel other seeds??
+	// Sounds tricky ... how to know where to place seeds?
+	// Carry on this way instead.
+	
+	// Check for greatest connections amongst the neighbours of the latest point ... vs...
+	// check for greatest connections from all so far. 
+	
+	// Alternative: geometric sweep. Move sweepline radius out and attribute all within into some block.
+	// According to existing neighbours. Sparser areas will make narrower blocks? Happens with the other way also.
+	// If the sparseness is created by pushing to left and right then it's not so.
+	// If the sparseness is created by upward stretch, block is stretched narrow.
+	// Cannot see way to avoid.
+	
+	// Sweepline has its own problems. Makes assignment dependent on small variations in radius to determine
+	// what else is already within sweepline.
+	
+	// . When we add a point, look at its neighbours: does one of them now have more connections than the 
+	// otherwise next point??
+
+	// Hmm
+
+	// Start with neighs that have 3 connections or more, then neighs that have 2 connections.
+	// This has to be updated __for_the_neighs__ as we go.
+	// Then we move on to ... the one of the new 
+
+	// I think we do need to store a list of the points in each tile so that we can work through them.
+	// Refresh it when we get to the end of the tile.
+
+	long izNeigh[128], izNeigh2[128], izTri[128];
+	Vertex * pCaret, * pNeigh, * pNeighNeigh;
+	bool bTilesRemaining = true;
+	int neigh_len, neigh_len2;
+	long iTileStart = 0;
+	long iThread, ii;
+	iTile = 0;
+	
+	memset(caret,0,sizeof(long)*numTilesMajor);
+	while (iTileStart < numTilesMajor) {
+				
+		for (iThread = 1; iThread < threadsPerTileMajor; iThread++)
+		for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+		{
+			// Add 1 to all tiles on the go:
+
+			// For this tile, we want to accumulate one further point.
+			// We always choose a neighbour of the 'caret' that was the first point added
+			// that still has neighbours unallocated.
+			// As such, this is a neighbour-neighbour expansion. We do not search for the
+			// unclaimed point that has the max number of connections.
+			// However, we do search within the neighbours of the caret point, to find which
+			// has the max connections to this tile.
+			// If there is a tie, choose the earliest index -- although this is meaningless.
+			
+			if (caret[iTile] < iThread) {
+				
+				// Go over all neighs of pCaret and count connections.
+				
+				int maxconnects, connects, numUnused;
+				int unallocated = 0;
+				// We may have wiped out all connections of caret, by the actions of other tiles if not this one.
+				// Move forward in the list until we have unallocated neighbours or until we run out of list.
+				do {	
+					pVertex = X + index[iTile][caret[iTile]];
+					if (pVertex->iVolley != iTile) {
+						printf("(pVertex->iVolley != iTile) \n"); 
+						getch();
+					}; // defensive test
+					neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+					for (i = 0; ((i < neigh_len) && (unallocated == 0)); i++)
+					{
+						pNeigh = X + izNeigh[i];
+						if (pNeigh->iVolley == -1) 
+							unallocated++;
+					};
+					
+					if (unallocated == 0) {
+						caret[iTile]++;
+						if (caret[iTile] >= iThread) {
+							// This means we are going to have to find a different point from which to
+							// start more allocation to this tile.							
+							// This case is going to be a problem even if we just placed the last point.
+							printf("This is bad news! Tile %d covered over.",iTile);
+							getch();							
+						};
+					};
+				} while (unallocated == 0);
+					
+				maxconnects = 0;
+				connects = 0;
+					
+				for (i = 0; i < neigh_len; i++)
+				{
+					pNeigh = X + izNeigh[i];
+					if (pNeigh->iVolley == -1) {
+						// how many connections to ours?
+						neigh_len2 = pNeigh->GetNeighIndexArray(izNeigh2);
+						connects = 0;
+						for (ii = 0; ii < neigh_len2; ii++)
+						{
+							pNeighNeigh = X + izNeigh2[ii];
+							if (pNeighNeigh->iVolley == iTile) connects++;
+						};
+						if (connects > maxconnects) maxconnects = connects;
+					}; // otherwise it is already taken
+				};
+					
+				connects = 0; i = 0;
+				while (connects < maxconnects) {
+					pNeigh = X + izNeigh[i];
+					connects = 0;
+					if (pNeigh->iVolley == -1) {
+						// how many connections to ours?
+						neigh_len2 = pNeigh->GetNeighIndexArray(izNeigh2);
+						for (ii = 0; ii < neigh_len2; ii++)
+						{
+							pNeighNeigh = X + izNeigh2[ii];
+							if (pNeighNeigh->iVolley == iTile) connects++;
+						};
+					}; 
+					i++;
+				};		// will stop when connects == maxconnects.
+				
+				// pNeigh is the one to change. 
+				// If we use i does that work correctly? No. But use pNeigh itself:
+				pNeigh->iVolley = iTile;
+				index[iTile][iThread] = pNeigh-X; // that will always work
+				
+				// Note that we did not maintain caret[iTile] any more -- maybe it ran out of points, maybe not.
+			} else {
+				// (caret[iTile] >= iThread)
+				
+				// The tile points with unused neighbours have been exhausted.
+				
+				// We should follow a procedure that is similar to what we do when we first
+				// start off a tile. 
+				
+				// If this is first point of tile, prefer we go to the anticlockwise side 
+				// of the "previous" tile, numTilesOnGo less.
+				// So find one of those points; move anticlockwise while on edge as much
+				// as we can.
+				
+				// If we got the whole tile covered up by accident, that's a problem!
+				// SO DO WHAT?
+				// Mine our way out from the most anticlockwise point??
+				// This won't be good anyway!
+				// Better to start on the next tile when we run out of one.
+								
+				// We accumulate one point at a time so all run out together.
+				// But this could still result in something being covered over?
+				// That sounds nuts. Don't worry about efficiency in this unlikely case.
+				
+				// How about we just fail in that case.
+				
+				printf("Failed because tile covered over: iTile %d iThread %d numTilesOnGo %d iTileStart %d \n",
+						iTile, iThread, numTilesOnGo, iTileStart);
+				getch();
+				
+			}; // if (caret[iTile] < iThread)
+		}; // next iTile, iThread
+		
+		// Now we finished the tiles on the go. Start off the next ones.
+		// First transcribe information on to vertex data for doing resequence.
+		for (iTile = iTileStart; iTile < iTileStart + numTilesOnGo; iTile++)
+		{
+			pVertex = X + index[iTile][iThread];
+			pVertex->iIndicator = iTile*threadsPerTileMajor + iThread;
+		}
+		
+		// =====
+		
+				// Find place where 2 finished tiles meet.
+				// Somehow make sure this nexus is not used again by some other tile ! ~
+		
+		// From caret of each tile, find the point on tile iTile+numTilesOnGo that has
+		// neighs from both this tile and the 'previous' tile.
+		int iPreviousTile, unallocated, iii;
+		long izTri[128];
+		for (iTile = iTileStart; ((iTile < iTileStart + numTilesOnGo)
+								&& (iTile + numTilesOnGo < numTilesMajor)); iTile++)
+		{
+			iPreviousTile = iTile-1; if (iTile == iTileStart) iPreviousTile = iTile + numTilesOnGo-1;
+			// for now assume the tiles stay next to each other: ???
+			// From caret[iTile] onwards the points may or may not have an unassigned neighbour.
+			i = caret[iTile]; 
+			// We seek a neighbour that is unallocated and has iPreviousTile for some other neighbour.
+			unallocated = 0;
+			bool bNeighOK = false;
+			while ((i < threadsPerTileMajor) && (bNeighOK == false))
+			{
+				pVertex = X + index[iTile][i];
+				if (pVertex->iVolley != iTile) { 
+					printf("Test failed....\n"); 
+					getch(); }  // defensive debug test
+				
+				neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+				for (ii = 0; ((ii < neigh_len) && (bNeighOK == false)); ii++)
+				{
+					pNeigh = X + izNeigh[ii];
+					if (pNeigh->iVolley == -1) 
+					{
+						// pNeigh is a candidate point.
+						neigh_len2 = pNeigh->GetNeighIndexArray(izNeigh2);
+						// Seek neighbour in iPreviousTile:
+						for (iii = 0; iii < neigh_len2; iii++)
+						{
+							pNeighNeigh = X + izNeigh2[iii];
+							if (pNeighNeigh->iVolley == iPreviousTile) 
+								bNeighOK = true;							
+						};
+					};					
+				};
+				if (bNeighOK) {
+					// pNeigh is valid
+					index[iTile + numTilesOnGo][0] = pNeigh-X;
+					pNeigh->iVolley = iTile + numTilesOnGo;
+				}
+				i++; // This can take i to threadsPerTileMajor -- in which case we ran out of points.
+
+			};
+			if (bNeighOK == false) {
+				printf("Something unexpected happened - no point found to start new tile, old iTile %d.\n",iTile);
+
+				getch();
+			};				
+		}
+
+		// =====
+
+		iTileStart += numTilesOnGo;
+		if (numTilesMajor - iTileStart < numTilesOnGo)
+			numTilesOnGo = numTilesMajor - iTileStart;
+		
+	}; // while (bTilesRemaining) 
+	
+	printf("Reseq : got to here.\n");
+	
+	// ===============================================================================	
 	// -------------------------------------------------------------------------------
 	// So we can proceed by: 
-	//  - Create 2nd system
+	
+	// Now comes the next: assign triangles into blocks also. :-(
+	// More fiddlinesse :
+	
+	// First preference if triangle has 2 points within a vertex tile then assign it there.
+	// We then try assigning 3-separate triangles to the tile that has the least assigned.
+	// Do we end up with an unassignable triangle? In that case we have to see what?
+	// Keep a record of how many 'negotiables' were attributed to each tile.
+	// Set the unassignable to the one with the most negotiables.
+	// Find one of the others and reassign it to a different tile.
+	// If they all had 0 other negotiables, we fail.
+	
+	long tris_assigned[numTriTiles];
+	long negotiables[numTriTiles];
+	memset(tris_assigned,0,sizeof(long)*numTriTiles);
+	memset(negotiables,0,sizeof(long)*numTriTiles);
+	long iTri, iVolley0, iVolley1, iVolley2;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+		
+		if ((iVolley0 == iVolley1) || (iVolley0 == iVolley2)) {
+			pTri->indicator = iVolley0; // only 1 int available in triangle
+			tris_assigned[iVolley0]++;
+			if (tris_assigned[iVolley0] > threadsPerTileMinor) {
+				printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+					iVolley0);
+				getch();
+			};
+		} else {
+			if (iVolley1 == iVolley2)
+			{
+				pTri->indicator = iVolley1;
+				tris_assigned[iVolley1]++;
+				if (tris_assigned[iVolley1] > threadsPerTileMinor) {
+					printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+						iVolley1);
+					getch();
+				};
+			} else {
+				pTri->indicator = -1;
+				negotiables[iVolley0]++;
+				negotiables[iVolley1]++;
+				negotiables[iVolley2]++;
+			};
+		};
+		++pTri;
+	}
+	bool bThirdPassNeeded = false;
+	long num0,num1,num2, nego0,nego1,nego2;
+	
+	// If tris_assigned + negotiables == threadsPerTileMinor then we
+	// should start by assigning those...
+	// If 1 more, we can go along assigning those, and so on.
+	
+	bool bEncountered;
+	long numUnassigned, numAssigned;
+	int addition = 0;
+	int iPass = 0;
+	do {
+		bEncountered = false;
+		numUnassigned = 0;
+		numAssigned = 0;
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			if (pTri->indicator == -1) {
+				numUnassigned++;
+				
+				// 3 separate vertex tiles
+				iVolley0 = pTri->cornerptr[0]->iVolley;
+				iVolley1 = pTri->cornerptr[1]->iVolley;
+				iVolley2 = pTri->cornerptr[2]->iVolley;
+				num0 = tris_assigned[iVolley0] + negotiables[iVolley0];
+				num1 = tris_assigned[iVolley1] + negotiables[iVolley1];
+				num2 = tris_assigned[iVolley2] + negotiables[iVolley2];
+				// Sort : A. By tris_assigned: fewer assigned => assign more
+				//        B. By negotiables: fewer negotiables => assign to that one
+				
+				if (num0 == threadsPerTileMinor + addition) {
+					
+					pTri->indicator = iVolley0;
+					tris_assigned[iVolley0]++;
+					negotiables[iVolley0]--;					
+					if (addition == 0) {
+						if (num1 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley1 %d \n",iVolley0,iVolley1);
+						if (num2 <= threadsPerTileMinor) printf("Problem: iVolley0 %d iVolley2 %d \n",iVolley0,iVolley2);
+					};
+					negotiables[iVolley1]--;
+					negotiables[iVolley2]--;
+					bEncountered = true;
+					
+					numAssigned++;
+				} else {
+					if (num1 == threadsPerTileMinor + addition) {
+						pTri->indicator = iVolley1;
+						tris_assigned[iVolley1]++;
+						negotiables[iVolley1]--;
+						
+						if (num0 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley0 %d \n",iVolley1,iVolley0);
+						if (num2 <= threadsPerTileMinor)printf("Problem: iVolley1 %d iVolley2 %d \n",iVolley1,iVolley2);
+						
+						negotiables[iVolley0]--;
+						negotiables[iVolley2]--;
+						bEncountered = true;
+						
+						numAssigned++;
+					} else {
+						if (num2 == threadsPerTileMinor + addition) {
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+							negotiables[iVolley2]--;
+							
+							if (num0 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley0 %d \n",iVolley2,iVolley0);
+							if (num1 <= threadsPerTileMinor)printf("Problem: iVolley2 %d iVolley1 %d \n",iVolley2,iVolley1);
+							
+							negotiables[iVolley0]--;
+							negotiables[iVolley1]--;
+							bEncountered = true;
+							
+							numAssigned++;
+						};
+					};
+				};
+			};
+		}; // next iTri
+		
+		// Run at 0 addition until none encountered
+		// Run at 1 --> if encounter, go back to 0; if not, go on to 2
+		// Run at 2 --> if encounter, go back to 0; 
+		if (bEncountered == true) {
+			addition = 0;
+		} else {
+			addition++;
+		};
+		printf("Pass %d addition %d unassigned %d of which %d assigned", iPass, addition, numUnassigned,
+			numAssigned);
+		iPass++;
+	} while (numUnassigned > 0);
+	
+	printf("Tri resequence done...\n");
+	
+	// Now turn 'volley' information into a sequence.
+	// WE CHANGE WHAT indicator MEANS :
+	
+	memset(tris_assigned,0,sizeof(long)*numTilesMajor);
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		int iWhich = pTri->indicator;
+		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich];
+		tris_assigned[iWhich]++;
+		++pTri;
+	};
+	
+	// We then can set the new sequence and try to resequence the triangles, and affect the
+	// triangle index lists.
+	//  - Create 2nd system:
+	
+	pVertex = X;
+	Vertex * pVertdest;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + pVertex->iIndicator;
+		
+		pVertdest->CopyDataFrom(pVertex);
+		pVertdest->CopyLists(pVertex);
+		// but now we need to change them:
+		
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+		};
+		
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};
+		
+		// Careful about other stuff.
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+		
+	Triangle * pTriDest;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + pTri->indicator;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal,pTri->edge_normal,sizeof(Vector2)*3);
+		
+		// Neighbour list, cornerptr list, what else to rewrite?
+		
+		pTriDest->neighbours[0] = pDestMesh->T + pTri->neighbours[0]->indicator;
+		pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+		pTriDest->neighbours[2] = pDestMesh->T + pTri->neighbours[2]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + pTri->cornerptr[0]->iIndicator;
+		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
+		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
+		
+		
+		
+		
+		++pTri;
+	}
+	
+	printf("Tiling & resequencing done.\n");
+	
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 	//  - Create Systdata to match it
-	//  - When we come back : 
+	//  - When we come back from GPU: 
 	//    -- we want to refresh this post-Delaunay flips.
 	//    -- can a flip trigger a local swap of indices to move smth between blocks?
 	

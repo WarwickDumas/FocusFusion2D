@@ -20,6 +20,9 @@ long const numTriTiles = 304; // note that there are also centrals
 long const numTilesMajor = 304;
 long const numTilesMinor = 456; 
 					// 456*256 = 304*256 + 304*128
+
+// numTriTiles == numTilesMajor because the two sets are bijective.
+
 long const threadsPerTileMinor = 256;
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
 long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;

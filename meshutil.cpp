@@ -5,7 +5,7 @@
 
 #include "headers.h"
 
-
+extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 // include here only:
 
 #include "mesh.cpp" // will include "basics.cpp"
@@ -717,16 +717,14 @@ int TriMesh::Initialise(int token)
 	// ---------------------------------------------------------------
 
 	// Expect [0.5*(R1+R2)*(pi/8)/r_spacing]*[(R2-R1)/spacing + 1] = num of vertices obtained
-	// (R1+R2)(R2-R1) = (R2*R2-R1*R1)
-	// = TotalArea / (r_spacing * spacing + r_spacing) = TotalArea / (r_spacing^2*(2/sqrt3) + r_spacing)
+	// Note (R1+R2)(R2-R1) = (R2*R2-R1*R1)
 
-	// So do this instead:
+	// OLD, wrong:
+//	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMBER_OF_VERTICES_AIMED) - SQRT3OVER2*0.5;
 
-	// (delta_r*delta_r + delta_r*sqrt3/2) = TA*(sqrt3/2) / Aim #
-	// (delta_r + sqrt3/4)^2 = 3/16 + TA*(sqrt3/2)/ Aim #
-	// delta_r = sqrt(-~~-) - sqrt3/4
+	f64 temp = 0.5*(PI/16.0)*(DOMAIN_OUTER_RADIUS+INNER_A_BOUNDARY)/(real)NUMBER_OF_VERTICES_AIMED;
+	r_spacing = sqrt(temp*temp + SQRT3OVER2*TotalArea/(real)NUMBER_OF_VERTICES_AIMED) + temp;
 
-	r_spacing = sqrt(3.0/16.0 + TotalArea*SQRT3OVER2/(real)NUMBER_OF_VERTICES_AIMED) - SQRT3OVER2*0.5;
 	spacing = r_spacing/SQRT3OVER2;
 		
 	// Expecting then? Number of rows ~ sqrt((num_verts_aimed)/TotalArea
@@ -740,7 +738,10 @@ int TriMesh::Initialise(int token)
 	r_use1 = (REVERSE_ZCURRENT_RADIUS-INNER_A_BOUNDARY)/(real)numRow1;
 	
 	numVertices = 0;
+
 	r = INNER_A_BOUNDARY;
+	FRILL_CENTROID_INNER_RADIUS = r - r_use1*0.5;
+
 	numRowprev = (int)(FULLANGLE*r/spacing)+1;
 	for (iRow = 0; iRow <= numRow1; iRow++)
 	{
@@ -818,8 +819,9 @@ int TriMesh::Initialise(int token)
 	};
 	
 	numRows = iRow; 	
-	Outermost_r_achieved = r; // should now be DOMAIN_OUTER_RADIUS. 	
-	
+	Outermost_r_achieved = r-r_use3; // should now be DOMAIN_OUTER_RADIUS. 	
+	FRILL_CENTROID_OUTER_RADIUS = r + r_use3*0.5;
+
 	// ##################################
 	// Now go over and increment / decrement each row to try to get the exact number of vertices.
 	printf("Outermost_r_achieved %1.5E \n",r);
@@ -832,7 +834,7 @@ int TriMesh::Initialise(int token)
 		long iHigh = 0;
 		for (i = numRow1+1; i < numRows; i++) // if we adjust more-inner rows, then we'd have to change StartZCurrentRow
 		{
-			density = r_row[i]/(real)numRow[iRow];
+			density = ((real)numRow[i])/r_row[i];
 			if (density > highdens) {
 				highdens = density;
 				iHigh = i;
@@ -844,14 +846,14 @@ int TriMesh::Initialise(int token)
 	};
 	
 	while (numVertices < NUMBER_OF_VERTICES_AIMED) {
-		f64 density, lowdens = 0.0;
+		f64 density, lowdens = 1.0e100;
 		long iLow = 0;
 		for (i = numRow1+1; i < numRows; i++)
 		{
-			density = r_row[i]/(real)numRow[iRow];
+			density = ((real)numRow[i])/r_row[i];
 			if (density < lowdens) {
 				lowdens = density;
-				iLow = i;
+				iLow = i;				
 			}
 		}
 		numRow[iLow]++;
@@ -859,7 +861,7 @@ int TriMesh::Initialise(int token)
 		printf("iLow %d numRow[iLow] %d \n",iLow,numRow[iLow]);
 	};
 	
-	// ##################################
+	// ##################################################
 	
 	numInnermostRow = numRow[0]; // store
 	numOutermostRow = numRow[numRows-1]; // store
@@ -1010,7 +1012,8 @@ int TriMesh::Initialise(int token)
 		iVertex++;
 		if (iVertex == numRow[0]) iVertex = 0;
 		SetTriangleVertex(1,pTri,X + iVertex);
-		SetTriangleVertex(2,pTri,X + iVertex); // not used, hopefully
+	//	SetTriangleVertex(2,pTri,X + iVertex); // not used, hopefully
+		pTri->cornerptr[2] = pTri->cornerptr[1];
 		pTri->u8domain_flag = INNER_FRILL;
 		++pTri;
 	}
@@ -1166,7 +1169,8 @@ int TriMesh::Initialise(int token)
 		iVertex++;
 		if (iVertex == numVertices) iVertex = iVertexLowFirst;
 		SetTriangleVertex(1,pTri,X + iVertex);
-		SetTriangleVertex(2,pTri,X + iVertex);
+	//	SetTriangleVertex(2,pTri,X + iVertex);
+		pTri->cornerptr[2] = pTri->cornerptr[1];
 		
 		pTri->u8domain_flag = OUTER_FRILL;
 		++pTri;
@@ -3860,6 +3864,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	long index[100];
 	long tempint[100];
 	long izTri[128],tri_len;
+
 	// 1. Sort triangle lists anticlockwise!!!
 	// ________________________________
 
@@ -3900,7 +3905,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 			}
 			angle[j] = theta;
 			index[j] = i;
-		};			
+		};
 		for (i = 0; i < tri_len; i++)
 			tempint[i] = izTri[index[i]];
 		// And now we come to have problems.
@@ -3916,7 +3921,30 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 			// Find one with neighbour == itself
 			// Choose the last such one to be the first element
 
-			i = 0;
+			// Specification calls for:
+			// The 0th tri should be one that is not a frill itself
+			// but is as anticlockwise as it can go and not be a frill.
+			
+			// Hopefully we got the correct ordering from the above.
+
+			// Find tri:
+			i = -1;
+			// 1. Move clockwise until we get to a frill
+			do {
+				i++;
+				pTri = T + izTri[i];
+			} while ((pTri->u8domain_flag != OUTER_FRILL) && (pTri->u8domain_flag != INNER_FRILL));
+			
+			// 2. Carry on until we get to not a frill
+			do {
+				i++; if (i == tri_len) i = 0;
+				pTri = T + izTri[i];
+			} while ((pTri->u8domain_flag == OUTER_FRILL) || (pTri->u8domain_flag == INNER_FRILL));
+			
+			// 3. Go and check what centroid will have been applied for a frill. Match GPU.
+			// We assigned it FRILL_CENTROID_OUTER_RADIUS
+			/*
+			// old:
 			int wend = 0;
 			do 
 			{
@@ -3932,9 +3960,7 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 				}
 			} while (wend == 0);
 			int i1 = i;
-
 			i++; // this will not have been the final element.
-
 			wend = 0;
 			do 
 			{
@@ -3949,9 +3975,9 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 					i++;
 				}
 			} while (wend == 0);
+			if ((i == tri_len-1) && (i1 == 0)) i = 0;			*/
 
-			if ((i == tri_len-1) && (i1 == 0)) i = 0;
-			
+			// Now rotate list:
 			iCaret = i;
 			for (i = 0; i < tri_len; i++)
 				tempint[i] = izTri[i];
@@ -3970,31 +3996,25 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{		
-		//pVertex->neigh_len = 0;
-
-		if (iVertex == 14214) {
-			iVertex = iVertex;
-		};
-
 		// Decide for triangle 0 which is the most clockwise other vertex
-
 		pVertex->ClearNeighs(); 
-
 		tri_len = pVertex->GetTriIndexArray(izTri);
 		int trimax;
 
 		pTri = T + izTri[0];
 		pTriPrev = T + izTri[tri_len-1];
 		
-		// periodic makes testing angles awkward so 
-
+		// periodic makes testing angles awkward, so :
 		// For domain vertex: just see which vertex also belongs to previous triangle.
 		// For boundary vertex: just test which neighbour vertex is also on the boundary.
 
-		if (pVertex->flags >= 4) {
+		if ((pVertex->flags == OUTERMOST) || (pVertex->flags == INNERMOST)) {
 			
+			// 25/05/17: New behaviour is different.
+			
+			// We only want to add an anticlockwise point for tris 0,...,tri_len-2
+		/*	
 			trimax = tri_len; // each further triangle adds a further neighbour.
-
 			if (pTri->cornerptr[0] == pVertex) {
 				if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
 					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
@@ -4027,7 +4047,11 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 						pVertPrev = pTri->cornerptr[1];
 					};
 				};
-			};
+			};*/
+
+			trimax = tri_len-2;
+			// And now will execute the standard code below.
+
 		} else {
 			// domain vertex: adds the more anticlockwise one only.
 			// WHY??? Probably because I wanted to make this code simple.
@@ -4036,44 +4060,42 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 			// Make it have 0 and 1 in first triangle.
 
 			trimax = tri_len-1; // below, only add a point for each triangle up to the last one.
+		};
 
-			if (pTri->cornerptr[0] == pVertex) {
-				if ( pTriPrev->has_vertex(pTri->cornerptr[1]) ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+		if (pTri->cornerptr[0] == pVertex) {
+			if ( pTriPrev->has_vertex(pTri->cornerptr[1]) ) {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+				pVertPrev = pTri->cornerptr[2];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+				pVertPrev = pTri->cornerptr[1];
+			};
+		} else {
+			if (pTri->cornerptr[1] == pVertex) {
+				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
 					pVertPrev = pTri->cornerptr[2];
 				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertPrev = pTri->cornerptr[1];
+					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+					pVertPrev = pTri->cornerptr[0];
 				};
 			} else {
-				if (pTri->cornerptr[1] == pVertex) {
-					if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertPrev = pTri->cornerptr[2];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
+				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+					pVertPrev = pTri->cornerptr[1];
 				} else {
-					if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertPrev = pTri->cornerptr[1];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
+					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+					pVertPrev = pTri->cornerptr[0];
 				};
 			};
 		};
-
-		// Note: in case of edge vertex we already added 2 neighbours so that's ok.
-
+		
 
 		for (int i = 1; i < trimax; i++)
 		{
