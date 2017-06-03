@@ -25,17 +25,13 @@ extern real evaltime, h;
 extern int GlobalSwitchBox, iGlobalScratch;
 
 extern real GlobalHeightScale;
-
 extern int GlobalSpeciesToGraph;
 extern int GlobalWhichLabels;
 extern bool GlobalRenderLabels;
 extern int GlobalColoursPlanView;
 extern bool GlobalBothSystemsInUse;
-
 extern real GlobalRescaling;
-
 extern bool GlobalCutaway;
-
 extern real GlobalIzElasticity;
 
 // Global pointers to meshes:
@@ -47,20 +43,14 @@ extern TriMesh X1, X2;
 //#include "simulation.cpp"  // defines simulation methods
 
 extern long steps_remaining, GlobalStepsCounter;
-
 extern int GlobalGraphSetting[5];
 extern surfacegraph Graph[5];
-
 extern D3DXVECTOR3 GlobalPlanEye2;
-
 extern float xzscale; // for graphs -- how to handle?
-
 extern bool boolDisplayInnerMesh;
 extern smartlong GlobalVertexScratchList;
-
 extern float Historic_max[100][HISTORY]; // if max is falling, use historic maximum for graph.
 extern float Historic_min[100][HISTORY];
-
 extern int GlobalWedgeSwitch; 
 extern smartlong GlobalAffectedTriIndexList;
 

@@ -992,73 +992,101 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 				X.ReturnL5Data(offset_data, &maximum, &minimum,
 					this->boolDisplayInnerMesh);
 			};
-		};
-
-		if (_isnan(maximum) || (!_finite(maximum)) || _isnan(minimum) || (!_finite(minimum)) )
-		{
-			printf("maximum %1.5E minimum %1.5E offset %d ",maximum, minimum, offset_data);
-			getch();
-		};	
-		
-		// Now decide on the actual max to use: 
-		int powermax, powermin;
-		if (maximum > 0.0) {
-			real logmaxbase_ours = log(maximum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
-			powermax = (int)logmaxbase_ours+1;
-
-			if ((boolGlobalHistory) && (powermax == Historic_powermax[code]-1))
-				powermax++;
-
-			maximum = pow(GRAPH_SCALE_GEOMETRIC_INCREMENT,powermax);
-		} else {
-			powermax = 0;
-		};
-		if (minimum < 0.0) {
-			real logminbase_ours = log(-minimum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
-			powermin = (int)logminbase_ours+1;
-
-			if ((boolGlobalHistory) && (powermin == Historic_powermin[code]-1))
-				powermin++;
-			
-			minimum = -pow(GRAPH_SCALE_GEOMETRIC_INCREMENT,powermin);
-		} else {
-			powermin = 0;
-		};
-		Historic_powermax[code] = powermax;
-		Historic_powermin[code] = powermin;
-
-		// Aim to set graphic y value = zeroplane y + factor * value:
-		if (maximum > 1.0e40) maximum = 1.0e40;
-		if (minimum > 1.0e40) minimum = 1.0e40;
-		this->ymax = max(0.0,maximum);
-		this->ymin = min(0.0,minimum);
-		if (this->ymax > this->ymin) {
-			this->yscale = (GRAPHIC_MAX_Y - GRAPHIC_MIN_Y)/(this->ymax - this->ymin);
-			if (this->ymax > 0.0)
-			{
-				if (this->ymin < 0.0)
-				{
-					zeroplane = GRAPHIC_MIN_Y + 
-						(GRAPHIC_MAX_Y - GRAPHIC_MIN_Y)*(-this->ymin/(this->ymax-this->ymin));
-				} else {
-					zeroplane = GRAPHIC_MIN_Y;
-				}
-			} else {
-				zeroplane = GRAPHIC_MAX_Y;
-			};
-		} else {
-			// all zero
-			zeroplane = 0.0f;
-			this->yscale = 1.0f;
-		};
-		// We set colourmax as the value we pass to shader -- 
-		// and notice that sometimes we have DATA_HEIGHT but _VELOCITY_COLOUR.
+		} 
 	} else {
-		//  plan view
+
+		//  plan view flat mesh case:
+		// ---------------------------
 		zeroplane = 0.0f;
 		yscale = 1.0f;
+		
+		if (colourflag == FLAG_VELOCITY_COLOUR)
+		{
+			maximum = X.ReturnL4_Velocity(offset_data,
+				this->boolDisplayInnerMesh);		
+			store_max = X.ReturnMaximumVelocity(offset_data,
+				this->boolDisplayInnerMesh);
+				
+			minimum = 0.0;
+			this->store_min = 0.0f;
+		} else {
+			if (colourflag == FLAG_CURRENT_COLOUR) 
+			{ 
+				maximum = X.ReturnL4_3DMagnitude(offset_data, 
+					this->boolDisplayInnerMesh);
+				store_max = X.ReturnMaximum3DMagnitude(offset_data, 
+					this->boolDisplayInnerMesh);
+				minimum = 0.0;
+				this->store_min = 0.0f;
+			} else {
+				X.ReturnMaxMinData(offset_data, &store_max, &store_min,
+					this->boolDisplayInnerMesh);
+				X.ReturnL5Data(offset_data, &maximum, &minimum,
+					this->boolDisplayInnerMesh);
+			};
+		};
 	};
 
+	if (_isnan(maximum) || (!_finite(maximum)) || _isnan(minimum) || (!_finite(minimum)) )
+	{
+		printf("maximum %1.5E minimum %1.5E offset %d ",maximum, minimum, offset_data);
+		getch();
+	};	
+	
+	// Now decide on the actual max to use: 
+	int powermax, powermin;
+	if (maximum > 0.0) {
+		real logmaxbase_ours = log(maximum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
+		powermax = (int)logmaxbase_ours+1;
+
+		if ((boolGlobalHistory) && (powermax == Historic_powermax[code]-1))
+			powermax++;
+
+		maximum = pow(GRAPH_SCALE_GEOMETRIC_INCREMENT,powermax);
+	} else {
+		powermax = 0;
+	};
+	if (minimum < 0.0) {
+		real logminbase_ours = log(-minimum)/log(GRAPH_SCALE_GEOMETRIC_INCREMENT);
+		powermin = (int)logminbase_ours+1;
+
+		if ((boolGlobalHistory) && (powermin == Historic_powermin[code]-1))
+			powermin++;
+		
+		minimum = -pow(GRAPH_SCALE_GEOMETRIC_INCREMENT,powermin);
+	} else {
+		powermin = 0;
+	};
+	Historic_powermax[code] = powermax;
+	Historic_powermin[code] = powermin;
+
+	// Aim to set graphic y value = zeroplane y + factor * value:
+	if (maximum > 1.0e40) maximum = 1.0e40;
+	if (minimum > 1.0e40) minimum = 1.0e40;
+	this->ymax = max(0.0,maximum);
+	this->ymin = min(0.0,minimum);
+	if (this->ymax > this->ymin) {
+		this->yscale = (GRAPHIC_MAX_Y - GRAPHIC_MIN_Y)/(this->ymax - this->ymin);
+		if (this->ymax > 0.0)
+		{
+			if (this->ymin < 0.0)
+			{
+				zeroplane = GRAPHIC_MIN_Y + 
+					(GRAPHIC_MAX_Y - GRAPHIC_MIN_Y)*(-this->ymin/(this->ymax-this->ymin));
+			} else {
+				zeroplane = GRAPHIC_MIN_Y;
+			}
+		} else {
+			zeroplane = GRAPHIC_MAX_Y;
+		};
+	} else {
+		// all zero
+		zeroplane = 0.0f;
+		this->yscale = 1.0f;
+	};
+
+	// We set colourmax as the value we pass to shader -- 
+	// and notice that sometimes we have DATA_HEIGHT but _VELOCITY_COLOUR.
 	switch(colourflag)
 	{
 		case FLAG_VELOCITY_COLOUR:
@@ -1082,6 +1110,7 @@ HRESULT surfacegraph::SetDataWithColour(const TriMesh & X,
 			// use code to determine if this is temperature or what.
 			break;
 		case FLAG_AZSEGUE_COLOUR:
+			
 			colourmax = max(maximum, fabs(minimum)); // scale both + and - according to this.
 			break;
 		case FLAG_CURRENT_COLOUR:

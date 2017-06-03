@@ -603,6 +603,20 @@ public:
 		return iCoarseIndex[i];
 	}
 		
+	void inline Vertex::CopyDataFrom(Vertex * pSrc)
+	{
+		A = pSrc->A;
+		this->Adot = pSrc->Adot;
+		this->B = pSrc->B;
+		this->E = pSrc->E;
+		this->Ion = pSrc->Ion;
+		this->Neut = pSrc->Neut;
+		this->Elec = pSrc->Elec;
+		this->phi = pSrc->phi;
+		this->pos = pSrc->pos;
+		// can same class access object's private data?
+	}
+
 	void inline Vertex::CopyLists(Vertex * pSrc)
 	{
 		flags = pSrc->flags;
@@ -1211,6 +1225,8 @@ public:
 	// *********       Mesh Maintenance / utility functions:     *********
 	// *******************************************************************
 	
+	void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh);
+
 	// in MeshUtil.cpp:
 	int Load(char * filename);
 	int Save(char * filename);

@@ -117,8 +117,9 @@ long const POINTS_PER_PLANE = 36864; // To have just under is OK
 // Initially do we want to plan for unused points? Not sure.
 // We can build that it - but we want the total dimensioned to be divisible by 128 etc.
 
-real const NUMBER_OF_VERTICES_AIMED = 36400; //36000; // particularly applies for polar?
-// Getting too many at 36800.
+long const NUMBER_OF_VERTICES_AIMED = 36864; //36000; // particularly applies for polar?
+				// = 288*128
+
 
 // For info: horizontal planar area at 2.8cm inner, 5cm outer radius = 3.37cm^2 with 1.18cm^2 inside objects.
 // So here we are going for roughly 100 micron spacing, 200000 points.

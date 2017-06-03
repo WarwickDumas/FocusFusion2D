@@ -21,7 +21,7 @@ f64 inline GetEzShape_(f64 r) {
 // repeat this in cpp file
 
 
-#include "systdata.cpp"
+//#include "systdata.cpp"
 
 
 // Version 0.94

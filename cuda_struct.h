@@ -16,12 +16,13 @@
 // We should keep the number down just to reduce fetch size.
 // Let's keep it real. nvT is best for our fetches and therefore is best.
 
-long const numTriTiles = 304; // note that there are also centrals
-long const numTilesMajor = 304;
-long const numTilesMinor = 456; 
+long const numTriTiles = 288; // note that there are also centrals
+long const numTilesMajor = 288;
+long const numTilesMinor = 432; // 432 = 288+144
 					// 456*256 = 304*256 + 304*128
-
+			
 // numTriTiles == numTilesMajor because the two sets are bijective.
+// Then we also have to assign central minors to tiles, twice the size of the major tiles...
 
 long const threadsPerTileMinor = 256;
 long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
