@@ -32,6 +32,7 @@ int const IMMOVABLE_OUTER = 5;
 // Triangle::u8domain_flag: keep this.
 
 int const DOMAIN_TRIANGLE = 0;
+int const DOMAIN_MINOR = 0;
 int const CROSSING_INS = 1;
 int const OUT_OF_DOMAIN = 2;
 int const INNER_FRILL = 3;

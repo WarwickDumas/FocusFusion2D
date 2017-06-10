@@ -57,10 +57,10 @@ long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
 
 struct CHAR4 {
 	char flag, per0, per1, per2;
-};
+}; // 4 bytes
 struct LONG3 {
 	long i1, i2, i3;
-};
+}; // 12 bytes
 struct nn {
 	f64 n_ionise, n_recombine;
 };
@@ -76,7 +76,7 @@ struct structural {
 	char flag;     // we want to now include "has_periodic"
 	// does that mean flag, has_periodic become char ? 
 	char has_periodic; // Let's really hope it doesn't pad this to be like 5 longs.
-};
+}; // 8+8+2+1+1
 
 struct nT {
 	f64 n; f64 T;
@@ -151,7 +151,7 @@ struct Systdata {
 // We need to move these funcs out into a .cu file.
 
 
-void PerformCUDA_Advance (
+void PerformCUDA_Advance_2 (
 		const Systdata * pX_host, // populate in CPU MSVC routine...
 		long numVerts,
 		const real hsub, 

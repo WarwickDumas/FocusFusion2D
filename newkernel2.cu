@@ -24,6 +24,11 @@
 // We set ins crossing tri minor area = 0, centroid on ins;
 // frill area = 0, centroid on boundary.
 
+// Version 0.6:
+
+// Debugging and making corrections.
+
+
 
 // PLAN: 
 // Allow that on GPU we can move outside domain and it's fine, we do not change PB data.
@@ -96,6 +101,12 @@
 
 #define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
 						// { Call(cudaStatus, "cudaStatus") } ?
+extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
+
+//long BLOCK_START_OF_FRILL_SEARCH = 256;
+// Do 288-256 = 32 blocks -- assuming 256*288 tris
+// This won't get the inner frills!!!!
+
 
 // Global host helper:
 __host__ bool Call(cudaError_t cudaStatus,char str[]);
@@ -139,6 +150,7 @@ __device__ __forceinline__ f64 Estimate_Neutral_Neutral_Viscosity_Cross_section(
 __device__ __forceinline__ f64 Estimate_Ion_Neutral_Viscosity_Cross_section(f64 T);
 __device__ __forceinline__ f64 Calculate_Kappa_Neutral(f64 n_i, f64 T_i, f64 n_n, f64 T_n);
 
+
 #ifdef __CUDACC__
 __device__ __forceinline__ f64 GetEzShape(f64 r) {
 	return 1.0-1.0/(1.0+exp(-16.0*(r-4.2))); // At 4.0cm it is 96% as strong as at tooth. At 4.4 it is 4%.
@@ -164,7 +176,8 @@ __constant__ f64 sC, kB, c,Z, e,q,m_e, m_ion, m_n,
 				 nu_eiBarconst, csq, m_s, 
 				  // New:
 				 FOUR_PI;
-				 
+//__constant__ long BLOCK_START_OF_FRILL_SEARCH_d;
+
 __constant__ f64 cross_s_vals_viscosity_ni_d[10], cross_s_vals_viscosity_nn_d[10],
 				 cross_T_vals_d[10], cross_s_vals_MT_ni_d[10];
 
@@ -185,6 +198,10 @@ __constant__ long ReverseJzIndexStart, ReverseJzIndexEnd; // MaxNeigh_d
 // Could be 10 vs 20.
 
 __constant__ f64 four_pi_over_c_ReverseJz;
+
+__constant__ f64 FRILL_CENTROID_OUTER_RADIUS_d, 
+				FRILL_CENTROID_INNER_RADIUS_d;
+
 __device__ real * p_summands, * p_Iz0_summands, * p_Iz0_initial,
 				* p_scratch_d, 
 				* p_resistive_heat_neut_minor,
@@ -346,14 +363,14 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 	if (perinfo.flag == OUTER_FRILL) 
 	{
 		f64_vec2 temp = 0.5*(pos1+pos2); 
-		temp.project_to_radius(centroid, FRILL_CENTROID_OUTER_RADIUS);
+		temp.project_to_radius(centroid, FRILL_CENTROID_OUTER_RADIUS_d);
 		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
 	}
 	
 	if (perinfo.flag == INNER_FRILL)
 	{
 		f64_vec2 temp = 0.5*(pos1+pos2); 
-		temp.project_to_radius(centroid, FRILL_CENTROID_INNER_RADIUS);
+		temp.project_to_radius(centroid, FRILL_CENTROID_INNER_RADIUS_d);
 		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
 	}
 	
@@ -378,6 +395,9 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 	
 	p_tri_centroid[tid] = centroid;
 	p_area_minor[tid] = 0.666666666666667*area;  
+	if (p_area_minor[tid] < 0.0) {
+		printf("tid %d area %1.2E \n",tid,area);
+	};
 	
 	// Perhaps we need instead to read data from neighbours to create tri minor area.
 	
@@ -817,19 +837,15 @@ __global__ void Kernel_GetZCurrent(
 			f64 * __restrict__ p_summands	)
 {
 	__shared__ f64 intrablock[threadsPerTileMinor];
-
 	long tid =  threadIdx.x + blockIdx.x * blockDim.x;
-	
 	CHAR4 minor_info = p_minor_info[tid];
-
 	// This is called for all minor cells. 
-
-	if ((minor_info.flag == DOMAIN_MINOR) || (minor_info.flag == OUTERMOST_CENTRAL)) {
-
+	if ((minor_info.flag == DOMAIN_MINOR) || (minor_info.flag == OUTERMOST)) {
+	
 		// Let DOMAIN_MINOR == DOMAIN_TRIANGLE ...
 		// And if you are DOMAIN_MINOR then n,v should be meaningful.
 		// Other possible values:
-		// OUTERMOST_CENTRAL, OUTER_FRILL, INNERMOST_CENTRAL, INNER_FRILL, INNER_TRIANGLE,
+		// OUTERMOST_CENTRAL == OUTERMOST, OUTER_FRILL, INNERMOST_CENTRAL, INNER_FRILL, INNER_TRIANGLE,
 		// CROSSING_INS, INNER_CENTRAL -- 
 
 		f64 n_ion = p_minor_nT_ion[tid].n;
@@ -1740,12 +1756,13 @@ __global__ void Kernel_Populate_A_frill(
 			//LONG3 * __restrict__ p_corner_index
 			LONG3 * __restrict__ p_tri_neigh_index)
 {
-	long index = (blockIdx.x + BLOCK_START_OF_FRILL_SEARCH)*blockDim.x + threadIdx.x;
+	//long index = (blockIdx.x + BLOCK_START_OF_FRILL_SEARCH_d)*blockDim.x + threadIdx.x;
+	long index = blockIdx.x*blockDim.x + threadIdx.x;
 	// load the two corner indices
 	CHAR4 perinfo = p_tri_info[index];
-
-	if (perinfo.flag == OUTER_FRILL) {
 	
+	if (perinfo.flag == OUTER_FRILL) {
+		
 		//LONG3 cornerindex = p_corner_index[index];
 		//A0 = p_A[BEGINNING_OF_CENTRAL + cornerindex.i1];
 		//A1 = p_A[BEGINNING_OF_CENTRAL + cornerindex.i2];
@@ -1754,7 +1771,7 @@ __global__ void Kernel_Populate_A_frill(
 		//if (perinfo.per0 == NEEDS_ANTI) A0 = Anticlock_rotate2(A0);
 		//if (perinfo.per1 == NEEDS_ANTI) A1 = Anticlock_rotate2(A1);
 		//p_A[index] = 0.5*(A0 + A1);
-
+		
 		// Just do this instead:
 		LONG3 neighindex = p_tri_neigh_index[index];
 		f64_vec2 cent = p_tri_centroid[index];
@@ -1768,7 +1785,7 @@ __global__ void Kernel_Populate_A_frill(
 		p_A[index] = A;
 	};
 	if (perinfo.flag == INNER_FRILL) {
-	
+		
 		//LONG3 cornerindex = p_corner_index[index];
 		//A0 = p_A[BEGINNING_OF_CENTRAL + cornerindex.i1];
 		//A1 = p_A[BEGINNING_OF_CENTRAL + cornerindex.i2];
@@ -1777,7 +1794,7 @@ __global__ void Kernel_Populate_A_frill(
 		//if (perinfo.per0 == NEEDS_ANTI) A0 = Anticlock_rotate2(A0);
 		//if (perinfo.per1 == NEEDS_ANTI) A1 = Anticlock_rotate2(A1);
 		//p_A[index] = 0.5*(A0 + A1);
-
+		
 		// Just do this instead:
 		LONG3 neighindex = p_tri_neigh_index[index];
 		f64_vec2 cent = p_tri_centroid[index];
@@ -6709,7 +6726,7 @@ void PerformCUDA_Advance_2 (
 	
 	long iVertex;
 	Systdata * pX1,*pX2,*pXhalf,*pXusable;
-	real * p_summands_host, * p_Iz0_summands_host, *p_scratch, *p_Iz0_initial_host;
+	real * p_summands_host, * p_Iz0_summands_host, *p_scratch, *p_Iz0_initial_host, * p_scratch_host;
 	structural * p_scratch_info;
 	int iSubsubstep;
 	size_t uFree, uTotal;	
@@ -6809,6 +6826,8 @@ void PerformCUDA_Advance_2 (
 	// 2. __constant__. 
 	// global const is not even supposed to work for integers.
 	
+	Set_f64_constant(FRILL_CENTROID_OUTER_RADIUS_d,FRILL_CENTROID_OUTER_RADIUS);
+	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d,FRILL_CENTROID_INNER_RADIUS);
 	Set_f64_constant(sC,sC_); // ever used?
 	Set_f64_constant(kB,kB_);
 	Set_f64_constant(c,c_); // ever used? likely not
@@ -6849,8 +6868,12 @@ void PerformCUDA_Advance_2 (
 	Set_f64_constant(over_sqrt_m_neutral,temp);
 	temp = c_*c_;
 	Set_f64_constant(csq,temp);
-	// again these could be #define, just need to calculate in Excel first.
-
+	
+	//Call(cudaGetSymbolAddress((void **)(&address), BLOCK_START_OF_FRILL_SEARCH_d),
+	//		"cudaGetSymbolAddress((void **)(&address), dest )");
+	//Call(cudaMemcpy( address, &BLOCK_START_OF_FRILL_SEARCH, sizeof(long),cudaMemcpyHostToDevice),
+	//		"cudaMemcpy( address, &BLOCK_START_OF_FRILL_SEARCH, sizeof(long),cudaMemcpyHostToDevice) src dest");
+		
 //	Set_f64_constant(MAXERRPPNSQ_d, MAXERRPPNSQ);
 //	Set_f64_constant(AVGFAC_d,AVGFAC);
 //	Set_f64_constant(ABSTHRESHFLUX_SQ_d,ABSTHRESHFLUX_SQ);
@@ -6900,7 +6923,7 @@ void PerformCUDA_Advance_2 (
 	p_Iz0_initial_host = (f64 *)malloc(numTilesMinor*sizeof(f64));
 	p_scratch = (f64 *)malloc((numVertices+1000)*sizeof(f64));
 	p_scratch_info = (structural *)malloc((numVertices+1000)*sizeof(structural));
-	
+	p_scratch_host = (f64 *)malloc((pX_host->Nminor+1000)*sizeof(f64));
 	// 2. cudaMemcpy system state from host: this happens always
 	// __________________________________________________________
 	
@@ -6927,12 +6950,14 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Syst1.p_tri_perinfo, pX_host->p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_tri_corner_index, pX_host->p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_tri_per_neigh, pX_host->p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyHostToDevice));
-	CallMAC(cudaMemcpy(Syst1.p_neigh_tri_index, pX_host->p_neigh_tri_index, Syst1.Ntris*sizeof(long)*MAXNEIGH_d, cudaMemcpyHostToDevice));
 	
-	CallMAC(cudaMemcpy(Syst1.pIndexTri, pX_host->pIndexTri, Syst1.Ntris*MAXNEIGH_d*sizeof(long), cudaMemcpyHostToDevice));
-	CallMAC(cudaMemcpy(Syst1.pPBCtri, pX_host->pPBCtri, Syst1.Ntris*MAXNEIGH_d*sizeof(char), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.pIndexNeigh, pX_host->pIndexNeigh, numVertices*MAXNEIGH_d*sizeof(long),cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.pPBCneigh, pX_host->pPBCneigh, numVertices*MAXNEIGH_d*sizeof(char),cudaMemcpyHostToDevice));
+	
+	CallMAC(cudaMemcpy(Syst1.pIndexTri, pX_host->pIndexTri, numVertices*MAXNEIGH_d*sizeof(long), cudaMemcpyHostToDevice));
+	CallMAC(cudaMemcpy(Syst1.pPBCtri, pX_host->pPBCtri, numVertices*MAXNEIGH_d*sizeof(char), cudaMemcpyHostToDevice));
+		
+	CallMAC(cudaMemcpy(Syst1.p_neigh_tri_index, pX_host->p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyHostToDevice));
 	
 	// Now copy across to the other systems we initialized.
 
@@ -6940,9 +6965,10 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Systhalf.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Systhalf.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(long)*MAXNEIGH_d, cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Systhalf.pIndexTri, Syst1.pIndexTri, Syst1.Ntris*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Systhalf.pPBCtri, Syst1.pPBCtri, Syst1.Ntris*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Systhalf.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
+	
+	CallMAC(cudaMemcpy(Systhalf.pIndexTri, Syst1.pIndexTri, numVertices*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Systhalf.pPBCtri, Syst1.pPBCtri, numVertices*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.pIndexNeigh, Syst1.pIndexNeigh,numVertices*MAXNEIGH_d*sizeof(long),cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.pPBCneigh, Syst1.pPBCneigh,numVertices*MAXNEIGH_d*sizeof(char),cudaMemcpyDeviceToDevice));
 	
@@ -6953,9 +6979,10 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Syst2.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Syst2.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(long)*MAXNEIGH_d, cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Syst2.pIndexTri, Syst1.pIndexTri, Syst1.Ntris*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Syst2.pPBCtri, Syst1.pPBCtri, Syst1.Ntris*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Syst2.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
+	
+	CallMAC(cudaMemcpy(Syst2.pIndexTri, Syst1.pIndexTri, numVertices*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Syst2.pPBCtri, Syst1.pPBCtri, numVertices*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.pIndexNeigh, Syst1.pIndexNeigh,numVertices*MAXNEIGH_d*sizeof(long),cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.pPBCneigh, Syst1.pPBCneigh,numVertices*MAXNEIGH_d*sizeof(char),cudaMemcpyDeviceToDevice));
 	
@@ -6963,15 +6990,16 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(SystAdv.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(SystAdv.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(long)*MAXNEIGH_d, cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(SystAdv.pIndexTri, Syst1.pIndexTri, Syst1.Ntris*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(SystAdv.pPBCtri, Syst1.pPBCtri, Syst1.Ntris*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(SystAdv.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
+	
+	CallMAC(cudaMemcpy(SystAdv.pIndexTri, Syst1.pIndexTri, numVertices*MAXNEIGH_d*sizeof(long), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(SystAdv.pPBCtri, Syst1.pPBCtri, numVertices*MAXNEIGH_d*sizeof(char), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.pIndexNeigh, Syst1.pIndexNeigh,numVertices*MAXNEIGH_d*sizeof(long),cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.pPBCneigh, Syst1.pPBCneigh,numVertices*MAXNEIGH_d*sizeof(char),cudaMemcpyDeviceToDevice));
 	
 	// None of these are being modified during a CUDA run cycle.
 	// So what we want is another class called something like "system_structure" with only 1 object existing.
-		
+	
 	printf("Done main cudaMemcpy to video memory.\n");
 	
 	// Let's test what we've been given:
@@ -6981,8 +7009,8 @@ void PerformCUDA_Advance_2 (
 	{
 		if (pX_host->p_info[iVertex].flag == DOMAIN_VERTEX) 
 		{
-			Iz0 += q_*(pX_host->p_nT_ion_minor[iVertex + BEGINNING_OF_CENTRAL].n*pX_host->p_v_ion[iVertex].z
-			        - pX_host->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].n*pX_host->p_v_elec[iVertex].z)*
+			Iz0 += q_*(pX_host->p_nT_ion_minor[iVertex + BEGINNING_OF_CENTRAL].n*pX_host->p_v_ion[iVertex + BEGINNING_OF_CENTRAL].z
+			        - pX_host->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].n*pX_host->p_v_elec[iVertex + BEGINNING_OF_CENTRAL].z)*
 					pX_host->p_area[iVertex];
 			
 			Ne += pX_host->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].n * pX_host->p_area[iVertex];
@@ -6994,7 +7022,7 @@ void PerformCUDA_Advance_2 (
 		//	        - pX_host->p_nT_elec[iVertex].n*pX_host->p_v_elec[iVertex].z)*
 		//			pX_host->p_area[iVertex]);
 	};
-	printf("pX_host Iz0 %1.12E Ne %1.8E \n",Iz0, Ne); 
+	printf("pX_host Iz0 %1.12E Ne %1.8E IzPresc %1.12E \n",Iz0, Ne, GetIzPrescribed(t)); 
 	//fclose(fp);
 	
 	pX1 = &Syst1;
@@ -7013,6 +7041,18 @@ void PerformCUDA_Advance_2 (
 	
 	// Not sure if this will help speed or just prevent 32-bit allocation:
 	//cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+				
+	CallMAC(cudaMemset(p_summands,0,sizeof(f64)*numTilesMinor));
+	Kernel_GetZCurrent<<<numTilesMinor,threadsPerTileMinor>>>(
+		pX1->p_tri_perinfo,
+		pX1->p_nT_ion_minor,
+		pX1->p_nT_elec_minor,
+		pX1->p_v_ion,
+		pX1->p_v_elec, // Not clear if this should be nv or {n,v} yet - think.
+		pX1->p_area_minor,
+		p_summands
+		);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize GetZCurrent 1.");
 	
 	CallMAC(cudaMemcpy(p_summands_host,p_summands,sizeof(f64)*numTilesMinor,cudaMemcpyDeviceToHost));
 	Iz0 = 0.0;
@@ -7020,7 +7060,7 @@ void PerformCUDA_Advance_2 (
 	{
 		Iz0 += p_summands_host[ii];
 	};	
-	printf("Iz X1 %1.12E \n",Iz0); 
+	printf("Iz X1 before area calc %1.12E \n",Iz0); 
 	
 	// 3. Advance:	
 	// For now do a version where the mesh motion is done every innermost step. 
@@ -7042,11 +7082,8 @@ void PerformCUDA_Advance_2 (
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 	cudaEventRecord(start,0);
-		
-
-	
+			
 // _____________________________________________________________________________
-
 
 	// Kernel calling code:
 
@@ -7078,9 +7115,42 @@ void PerformCUDA_Advance_2 (
 		 pX1->p_area_minor + BEGINNING_OF_CENTRAL);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateCentralMinorAreas 1.");
 	
+
+	// Frills have area -13*2/3
+	// Why?
+	// And do not show up during triangle area calc kernel.
+
+
+
+	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area_minor,sizeof(f64)*pX1->Nminor,cudaMemcpyDeviceToHost));
+	f64 areasum = 0.0;
+	int iTest;
+	for (iTest = 0; iTest < pX1->Ntris; iTest++)
+	{
+		if (p_scratch_host[iTest] < 0.0) {
+			printf("iTest %d %1.5E \n",iTest,p_scratch_host[iTest]);
+		};
+		areasum += p_scratch_host[iTest];
+	}
+	printf("Areasum tris only %1.12E \n",areasum); // -2500.
+	for (; iTest < pX1->Nminor; iTest++)
+	{
+		areasum += p_scratch_host[iTest];
+	}
+	printf("Areasum %1.12E \n",areasum);
+
+	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
+	areasum = 0.0;
+	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
+	{
+		areasum += p_scratch_host[iTest];
+	}
+	printf("Areasum_major %1.12E \n",areasum);
+
+
 	// The number of triangles will not be exactly numTriTiles*threadsPerTileMinor.
 	// THAT WOULD BE VERY BAD NEWS: It means that the array has a hole in it!!
-
+		
 	// NEED geometry to give exact # tris and ideally # vertices also.
 	// However, #tris = #firstrow + #lastrow + 2* sum of other #in_row
 	// On that it looks unlikely that we'd happen to achieve a multiple of 128 if #tris % 256=0;
@@ -7088,14 +7158,14 @@ void PerformCUDA_Advance_2 (
 	// Alternative would be to put tris hanging off first row and outside last row.
 	// This doesn't serve an obvious purpose and causes aggro: what is corner index in meaningless tri.
 	// But it might actually make getting a #tris easier.
-
+	
 	// Central cells use a bigger shared memory footprint by looking at tri data with indices.
 	// So we probably don't want larger blocks for them, as large as tri blocks.
 	// Makes more sense to put tris in blocks
 	
-
+	
 	// ***  Document design decisions and reasons. --- Weds
-
+	
 	// Here's a problem: we have said that we need to start minor block at 2* start index
 	// Otherwise ... maybe it would still work if we loaded a start point into shared data,
 	// but we do not know.
@@ -7124,7 +7194,7 @@ void PerformCUDA_Advance_2 (
 	
 	// HMMMM
 	// How to handle nT data?
-
+	
 	CallMAC(cudaMemcpy(p_summands_host,p_summands,sizeof(f64)*numTilesMinor,cudaMemcpyDeviceToHost));
 	Iz0 = 0.0;
 	for (int ii = 0; ii < numTilesMinor; ii++)
@@ -7132,7 +7202,8 @@ void PerformCUDA_Advance_2 (
 		Iz0 += p_summands_host[ii];
 	};	
 	printf("Iz after areas %1.12E \n",Iz0);
-	
+	getch();
+
 	int iSubstep;
 	for (iSubstep = 0; iSubstep < numSubsteps; iSubstep++)
 	{
@@ -7219,7 +7290,7 @@ void PerformCUDA_Advance_2 (
 		// 3. anti-advect phi, phidot [Lap phi advances dphi/dt also -- inconsistent with rest of scheme]
 		//    + advance phi to half-time using updated phidot
 		//   ^^^ major, function of major  but Lap phi uses edges from tri centroid
-
+		
 		// What we are supposed to do:
 		// * phidot requires Lap_phi_k and rho_k to advance.
 		// * phi uses the resulting phidot to advance to phi_half
@@ -7227,8 +7298,7 @@ void PerformCUDA_Advance_2 (
 		
 		// * A uses dA/dt_k to advance to A_half
 		//  * We need grad A and grad Adot, on all, to do anti-advect.
-		
-		
+				
 		Get_Lap_phi_on_major<<<numTilesMajor,threadsPerTileMajor>>>
 			(
 			pX1->p_phi,
@@ -7354,9 +7424,9 @@ void PerformCUDA_Advance_2 (
 			// output:
 			pXhalf->p_A// fill in for both tri and vert...			
 			);
-
+		
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Antiadvect A etc.");
-
+		
 		// Get this right: Why we like to save Lap A half -- because it
 		// contributes to advancing Adot during the main step.
 		// So we have to be careful here and call for Lap A again AFTER
@@ -8456,6 +8526,7 @@ void PerformCUDA_Advance_2 (
 	free(p_scratch);
 	free(p_scratch_info);
 	free(p_Iz0_initial_host);
+	free(p_scratch_host);
 
 	printf("Transferred back.\n");
 	

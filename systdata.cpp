@@ -1,6 +1,5 @@
 
 
-// When built into 1, this must go inside #ifdef __CUDACC__
 #include "cuda_struct.h"
 #include <conio.h>
 #include <malloc.h>
@@ -8,9 +7,13 @@
 #include <memory.h>
 
 
-#define NOCUDA
+//#define NOCUDA
 
 
+// moved down because we want to run without cuda for a minute
+#ifdef __CUDACC__
+
+// When built into 1, this must go inside #ifdef __CUDACC__
 Systdata::Systdata() {
 	bInvoked = false;
 	bInvokedHost = false;
@@ -18,9 +21,6 @@ Systdata::Systdata() {
 	Ntris = 0;
 	Nminor = 0;
 }
-
-// moved down because we want to run without cuda for a minute
-#ifdef __CUDACC__
 
 void Systdata::Invoke (long N){
 	printf("Systdata::Invoke N %d \n",
@@ -146,7 +146,9 @@ void Systdata::InvokeHost (long N){
 		
 		p_tri_centroid = (f64_vec2 *)malloc(Ntris*sizeof(f64_vec2));
 		
-		if (p_tri_centroid != 0)
+		if ((p_tri_centroid != 0)
+			&&
+			(p_neigh_tri_index != 0)) // ?
 		{
 			bInvokedHost = true;
 			ZeroHost();
