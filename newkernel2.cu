@@ -356,22 +356,27 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 	// So use fabs:
 	f64 area = fabs(0.5*(   (pos2.x+pos1.x)*(pos2.y-pos1.y)
 						 + (pos3.x+pos2.x)*(pos3.y-pos2.y)
-						 + (pos1.x+pos3.x)*(pos1.y-pos2.y)
+						 + (pos1.x+pos3.x)*(pos1.y-pos3.y)
 					)	);
 	f64_vec2 centroid = THIRD*(pos1+pos2+pos3);
-	
+	if (area > 1.0e-3) {
+		printf("tri %d area %1.3E pos_x %1.6E %1.6E %1.6E \n"
+			   "                    pos_y %1.6E %1.6E %1.6E \n",tid,area,
+			pos1.x,pos2.x,pos3.x,
+			pos1.y,pos2.y,pos3.y);
+	}
 	if (perinfo.flag == OUTER_FRILL) 
 	{
 		f64_vec2 temp = 0.5*(pos1+pos2); 
 		temp.project_to_radius(centroid, FRILL_CENTROID_OUTER_RADIUS_d);
-		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
+		area = 1.0e-14; // == 0 but tiny is less likely to cause 1/0
 	}
 	
 	if (perinfo.flag == INNER_FRILL)
 	{
 		f64_vec2 temp = 0.5*(pos1+pos2); 
 		temp.project_to_radius(centroid, FRILL_CENTROID_INNER_RADIUS_d);
-		area = 1.0-14; // == 0 but tiny is less likely to cause 1/0
+		area = 1.0e-14; // == 0 but tiny is less likely to cause 1/0
 	}
 	
 	if (perinfo.flag == CROSSING_INS) {
@@ -388,15 +393,19 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 		//b3 = (pos3.x*pos3.x+pos3.y*pos3.y > INSULATOR_OUTER_RADIUS*INSULATOR_OUTER_RADIUS);
 		
 		// Save ourselves some bother for now by setting area to be near 0.
-		area = 1.0e-14;
+	//	area = 1.0e-14;
 		// FOR NOW, legislate v = 0 in insulator-crossing tris.
 		// And so avoid having to do an awkward area calculation.
+
+		// Stick with correct area for tri as area variable.
+		// Possibly we never use 'area' except for domain-related matters; if that can be
+		// verified, then it's best to change to 'domain_intersection_area', however tricky.
 	}
 	
 	p_tri_centroid[tid] = centroid;
 	p_area_minor[tid] = 0.666666666666667*area;  
 	if (p_area_minor[tid] < 0.0) {
-		printf("tid %d area %1.2E \n",tid,area);
+		printf("kernel -- tid %d flag %d area %1.8E \n",tid,perinfo.flag,area);
 	};
 	
 	// Perhaps we need instead to read data from neighbours to create tri minor area.
@@ -476,7 +485,11 @@ __global__ void Kernel_CalculateCentralMinorAreas (
 		// Then have 1/9 area in central shard, 2/3 in edge minor,
 		// so (1/9)/(2/3) = 1/6
 		p_area_minor[index] = sum*SIXTH;
+		if (sum < 0.0) {
+			printf("kerncentral -- tid %d area %1.2E \n",index,p_area_minor[index]);
+		};
 	};
+	
 	// This may give funny results at the edges of memory, where we have added
 	// areas only of shards that formed part of triangles. But that is the expected
 	// behaviour here.
@@ -516,7 +529,6 @@ __global__ void Kernel_CalculateMajorAreas (
 	__syncthreads();
 
 	long index = threadIdx.x + blockIdx.x * blockDim.x;
-		
 	f64_vec2 uprev, unext;
 
 	//if (index < Nverts) { // redundant test, should be
@@ -562,10 +574,10 @@ __global__ void Kernel_CalculateMajorAreas (
 			}
 			char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + iNeigh];
 			if (PBC == NEEDS_CLOCK) {
-				unext = Clockwise_rotate2(uprev);
+				unext = Clockwise_rotate2(unext);
 			}
 			if (PBC == NEEDS_ANTI) {
-				unext = Anticlock_rotate2(uprev);
+				unext = Anticlock_rotate2(unext);
 			}	
 			
 			// Get edge_normal.x and average x on edge
@@ -597,8 +609,8 @@ __global__ void Kernel_CalculateMajorAreas (
 				unext = p_tri_centroid[indextri];
 			}
 			char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + iNeigh];
-			if (PBC == NEEDS_CLOCK) unext = Clockwise_rotate2(uprev);
-			if (PBC == NEEDS_ANTI) unext = Anticlock_rotate2(uprev);
+			if (PBC == NEEDS_CLOCK) unext = Clockwise_rotate2(unext);
+			if (PBC == NEEDS_ANTI) unext = Anticlock_rotate2(unext);
 						
 			grad_x_integrated_x += 0.5*(unext.x+uprev.x)*(unext.y-uprev.y);
 			
@@ -609,6 +621,10 @@ __global__ void Kernel_CalculateMajorAreas (
 	};
 
 	p_area[index] = grad_x_integrated_x;
+	if (grad_x_integrated_x < 0.0) {
+		printf("index %d flag %d area %1.3E \n",
+			index, info.flag, grad_x_integrated_x);
+	};
 }
 
 
@@ -7104,9 +7120,9 @@ void PerformCUDA_Advance_2 (
 		printf("cudaPALEarea %s\n",cudaGetErrorString(cudaGetLastError()));
 		getch();
 	} else {
-		printf("No error found,\n");
+		printf("Kernel_CalculateTriMinorAreas_AndCentroids No error found,\n");
 	}
-	
+
 	Kernel_CalculateCentralMinorAreas<<<numTilesMajor, threadsPerTileMajor>>>(
 		 pX1->p_info,
 		 pX1->pIndexTri, // lists of length 12
@@ -7115,6 +7131,15 @@ void PerformCUDA_Advance_2 (
 		 pX1->p_area_minor + BEGINNING_OF_CENTRAL);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateCentralMinorAreas 1.");
 	
+	if (cudaPeekAtLastError() != cudaSuccess) {
+		printf("cudaPALEarea %s\n",cudaGetErrorString(cudaGetLastError()));
+		getch();
+	} else {
+		printf("Kernel_CalculateCentralMinorAreas No error found,\n");
+	}
+
+	getch();
+
 
 	// Frills have area -13*2/3
 	// Why?
@@ -7145,9 +7170,26 @@ void PerformCUDA_Advance_2 (
 	{
 		areasum += p_scratch_host[iTest];
 	}
-	printf("Areasum_major %1.12E \n",areasum);
+	printf("Areasum_major old %1.12E \n",areasum);
 
-
+	Kernel_CalculateMajorAreas<<<numTilesMajor,threadsPerTileMajor>>>(
+			pX1->p_info,
+			pX1->p_tri_centroid,
+			pX1->pIndexTri,
+			pX1->pPBCtri,
+			pX1->p_area
+			);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateMajorAreas");
+	
+	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
+	areasum = 0.0;
+	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
+	{
+		areasum += p_scratch_host[iTest];
+	}
+	printf("Areasum_major II %1.12E \n",areasum);
+	
+	
 	// The number of triangles will not be exactly numTriTiles*threadsPerTileMinor.
 	// THAT WOULD BE VERY BAD NEWS: It means that the array has a hole in it!!
 		
