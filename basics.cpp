@@ -1014,6 +1014,18 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 		if ((pVertex->flags == CONCAVE_EDGE_VERTEX) ||
 			(pVertex->flags == CONVEX_EDGE_VERTEX) )
 		{
+			for (i = 0; i < tri_len; i++)
+			{
+				pTri = T + izTri[i];
+				u = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+				if (u.x*u.x+u.y*u.y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+					u.project_to_radius(u,INNER_A_BOUNDARY);
+				if (u.x*u.x+u.y*u.y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+					u.project_to_radius(u,DOMAIN_OUTER_RADIUS);
+				cp.add(u);				
+			};
+			
+			/*
 			// Project to a radius ...
 			pTri = T + izTri[0];
 			u = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
@@ -1041,7 +1053,7 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 				u.project_to_radius(u,DOMAIN_OUTER_RADIUS);
 			};
 			cp.add(u);
-			
+			*/
 		} else {
 		
 			for (i = 0; i < tri_len; i++)
@@ -1053,9 +1065,25 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 
 		pVertex->AreaCell = cp.GetArea();
 		pVertex->centroid = cp.CalculateBarycenter();
-		
-		// Some disclarity: should edge-of-memory vertices take centroid = pos, to be on edge?
 
+		
+		if (iVertex == 36685) {
+			printf("vertex %d flag %d \n",iVertex,pVertex->flags);
+			for (i = 0; i < cp.numCoords; i++)
+				printf("%1.5E %1.5E ... %1.5E \n",cp.coord[i].x,cp.coord[i].y,
+											cp.coord[i].modulus());
+			printf("\n\n");
+			
+			for (i = 0; i < tri_len; i++)
+			{
+				pTri = T + izTri[i];
+				u = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+				printf("%1.5E %1.5E ... %1.5E \n",u.x,u.y,u.modulus());			
+			};
+
+			getch();
+		}
+		
 		++pVertex;
 	};
 }

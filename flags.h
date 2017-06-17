@@ -34,9 +34,10 @@ int const IMMOVABLE_OUTER = 5;
 int const DOMAIN_TRIANGLE = 0;
 int const DOMAIN_MINOR = 0;
 int const CROSSING_INS = 1;
-int const OUT_OF_DOMAIN = 2;
-int const INNER_FRILL = 3;
-int const OUTER_FRILL = 4;
+//int const CROSSING_INS_2OUT = 2;
+int const OUT_OF_DOMAIN = 3;
+int const INNER_FRILL = 4;
+int const OUTER_FRILL = 5;
 
 // The following does not really belong in this file:
 

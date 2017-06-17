@@ -526,14 +526,31 @@ __global__ void Kernel_CalculateMajorAreas (
 		p_tri_centroid[blockIdx.x*SIZE_OF_TRI_TILE_FOR_MAJOR + threadIdx.x];
 	shared_centroids[blockDim.x + threadIdx.x] = 
 		p_tri_centroid[blockIdx.x*SIZE_OF_TRI_TILE_FOR_MAJOR + blockDim.x + threadIdx.x];	
-	__syncthreads();
+	//
+	//if (shared_centroids[threadIdx.x].x*shared_centroids[threadIdx.x].x
+	//	+ shared_centroids[threadIdx.x].y*shared_centroids[threadIdx.x].y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+	//	shared_centroids[threadIdx.x].project_to_radius(shared_centroids[threadIdx.x],DOMAIN_OUTER_RADIUS);
+	//
+	//if (shared_centroids[threadIdx.x].x*shared_centroids[threadIdx.x].x
+	//	+ shared_centroids[threadIdx.x].y*shared_centroids[threadIdx.x].y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+	//	shared_centroids[threadIdx.x].project_to_radius(shared_centroids[threadIdx.x],INNER_A_BOUNDARY);
+	//
+	//if (shared_centroids[blockDim.x + threadIdx.x].x*shared_centroids[blockDim.x + threadIdx.x].x
+	//	+ shared_centroids[blockDim.x + threadIdx.x].y*shared_centroids[blockDim.x + threadIdx.x].y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+	//	shared_centroids[blockDim.x + threadIdx.x].project_to_radius(shared_centroids[blockDim.x + threadIdx.x],DOMAIN_OUTER_RADIUS);
+	//
+	//if (shared_centroids[blockDim.x + threadIdx.x].x*shared_centroids[blockDim.x + threadIdx.x].x
+	//	+ shared_centroids[blockDim.x + threadIdx.x].y*shared_centroids[blockDim.x + threadIdx.x].y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+	//	shared_centroids[blockDim.x + threadIdx.x].project_to_radius(shared_centroids[blockDim.x + threadIdx.x],INNER_A_BOUNDARY);
+	//
 
+	__syncthreads();
+	
 	long index = threadIdx.x + blockIdx.x * blockDim.x;
 	f64_vec2 uprev, unext;
-
+	
 	//if (index < Nverts) { // redundant test, should be
 	structural info = p_info[index];
-
 	memcpy(Indextri + MAXNEIGH_d*threadIdx.x, 
 			pIndexTri + MAXNEIGH_d*index,
 			MAXNEIGH_d*sizeof(long)); // MAXNEIGH_d should be chosen to be 12, for 1 full bus.
@@ -589,12 +606,18 @@ __global__ void Kernel_CalculateMajorAreas (
 		// FOR THE OUTERMOST / INNERMOST CELLS :
 		// In this case we basically substituted tri_len for neigh_len:
 
+		// Also we project frill centroid on to the inner/outer radius.
+		
 		long indextri = Indextri[MAXNEIGH_d*threadIdx.x + info.neigh_len];
 		if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
 			uprev = shared_centroids[indextri-StartMinor];
 		} else {
 			uprev = p_tri_centroid[indextri];
 		}
+		if (uprev.x*uprev.x + uprev.y*uprev.y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+			uprev.project_to_radius(uprev,DOMAIN_OUTER_RADIUS);
+		if (uprev.x*uprev.x + uprev.y*uprev.y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+			uprev.project_to_radius(uprev,INNER_A_BOUNDARY);
 		char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + info.neigh_len];
 		if (PBC == NEEDS_CLOCK) uprev = Clockwise_rotate2(uprev);
 		if (PBC == NEEDS_ANTI) uprev = Anticlock_rotate2(uprev);
@@ -607,7 +630,12 @@ __global__ void Kernel_CalculateMajorAreas (
 				unext = shared_centroids[indextri-StartMinor];
 			} else {
 				unext = p_tri_centroid[indextri];
-			}
+			}			
+			if (unext.x*unext.x + unext.y*unext.y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+				unext.project_to_radius(unext,DOMAIN_OUTER_RADIUS);
+			if (unext.x*unext.x + unext.y*unext.y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+				unext.project_to_radius(unext,INNER_A_BOUNDARY);
+			
 			char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + iNeigh];
 			if (PBC == NEEDS_CLOCK) unext = Clockwise_rotate2(unext);
 			if (PBC == NEEDS_ANTI) unext = Anticlock_rotate2(unext);
@@ -619,11 +647,51 @@ __global__ void Kernel_CalculateMajorAreas (
 			uprev = unext;
 		};
 	};
-
+	
 	p_area[index] = grad_x_integrated_x;
-	if (grad_x_integrated_x < 0.0) {
+	if ((index == 36685)) {
 		printf("index %d flag %d area %1.3E \n",
 			index, info.flag, grad_x_integrated_x);
+		
+		long indextri = Indextri[MAXNEIGH_d*threadIdx.x + info.neigh_len-1];
+		if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
+			uprev = shared_centroids[indextri-StartMinor];
+		} else {
+			uprev = p_tri_centroid[indextri];
+		}
+		char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + info.neigh_len-1];
+		if (PBC == NEEDS_CLOCK) {
+			uprev = Clockwise_rotate2(uprev);
+		}
+		if (PBC == NEEDS_ANTI) {
+			uprev = Anticlock_rotate2(uprev);
+		}
+		printf("uprev %1.5E %1.5E ... %1.5E\n",uprev.x,uprev.y,uprev.modulus());
+		short iNeigh;
+		for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++) // iNeigh is the anticlockwise one
+		{
+			indextri = Indextri[MAXNEIGH_d*threadIdx.x + iNeigh];
+			if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
+				unext = shared_centroids[indextri-StartMinor];
+			} else {
+				unext = p_tri_centroid[indextri];
+			}
+			char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + iNeigh];
+			if (PBC == NEEDS_CLOCK) {
+				unext = Clockwise_rotate2(unext);
+			}
+			if (PBC == NEEDS_ANTI) {
+				unext = Anticlock_rotate2(unext);
+			}	
+			
+			printf("unext %1.5E %1.5E ... %1.5E \n",unext.x,unext.y,unext.modulus());
+			
+			// Get edge_normal.x and average x on edge
+			grad_x_integrated_x += //0.5*(unext.x+uprev.x)*edge_normal.x
+									0.5*(unext.x+uprev.x)*(unext.y-uprev.y);
+			uprev = unext;
+		};
+		
 	};
 }
 
@@ -7166,10 +7234,13 @@ void PerformCUDA_Advance_2 (
 
 	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
 	areasum = 0.0;
+	FILE * fp = fopen("oldareas.txt","w");
 	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
 	{
 		areasum += p_scratch_host[iTest];
+		fprintf(fp,"%d %1.15E\n",iTest,p_scratch_host[iTest]);
 	}
+	fclose(fp);
 	printf("Areasum_major old %1.12E \n",areasum);
 
 	Kernel_CalculateMajorAreas<<<numTilesMajor,threadsPerTileMajor>>>(
@@ -7181,12 +7252,15 @@ void PerformCUDA_Advance_2 (
 			);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateMajorAreas");
 	
+	fp = fopen("newareas.txt","w");
 	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
 	areasum = 0.0;
 	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
 	{
 		areasum += p_scratch_host[iTest];
+		fprintf(fp,"%d %1.15E\n",iTest,p_scratch_host[iTest]);
 	}
+	fclose(fp);
 	printf("Areasum_major II %1.12E \n",areasum);
 	
 	

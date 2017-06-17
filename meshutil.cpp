@@ -820,11 +820,20 @@ int TriMesh::Initialise(int token)
 	
 	numRows = iRow; 	
 	Outermost_r_achieved = r-r_use3; // should now be DOMAIN_OUTER_RADIUS. 	
-	FRILL_CENTROID_OUTER_RADIUS = r + r_use3*0.5;
+	FRILL_CENTROID_OUTER_RADIUS = r - r_use3*0.5;
+	// Used for Lap A calculating from A_frill but not for major area calc.
+	
+	// This is giving disagreement of areas: major areas think they
+	// include out to this centroid whereas minor areas take frill area = 0.
+	
+	// Consider what is best to do about that.
+	
 
 	// ##################################
+
 	// Now go over and increment / decrement each row to try to get the exact number of vertices.
-	printf("Outermost_r_achieved %1.5E \n",r);
+	// printf("Outermost_r_achieved %1.10E r_row[0] %1.10E\n",r-r_use3,r_row[0]);
+	
 	printf("numVertices %d NUM_AIMED %d ... \n",numVertices, NUMBER_OF_VERTICES_AIMED);
 	
 	// Clever recoding would avoid going through and doing all these divides:
@@ -977,12 +986,15 @@ int TriMesh::Initialise(int token)
 					r = DEVICE_RADIUS_INSULATOR_OUTER+0.5*r_spacing; 
 					Xdomain = vert; // next point is first of domain vertices.
 				} else {
-					r += r_spacing;
+					r += r_use3;
 				};
 			};
 		};
 	};
-	
+	printf("X[36800].modulus %1.10E \n",X[36800].pos.modulus());
+
+	getch();
+
 	if (iVertex != numVertices) {
 		printf("summat wrong. iVertex %d numVertices %d \n",iVertex,numVertices);
 			getch();
@@ -6222,9 +6234,7 @@ real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const
 		++pVert;
 	};
 	if (num == 0) return 0.0;
-
 	real L2sq = L2sum/(real)num;
-
 	L2sq *= 0.25; // create cutoff
 
 	// b. Take L6 to get _near_ the maximum.
