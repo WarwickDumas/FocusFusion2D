@@ -1970,7 +1970,7 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 			(0.5*(pos1.x+pos2.x)+tri_centroid[threadIdx.x].x+u0.x)*edgenormal.x;
 
 		// NOT CONSISTENT BEHAVIOUR:
-			// TO HERE WAS ENOUGH TO FAIL.
+			// TO HERE IS ENOUGH TO FAIL.
 
 
 		// ASSUMING ALL VALUES VALID (consider edge of memory a different case):
@@ -2150,6 +2150,7 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 	
 	// Now we have to do something about anti-advecting:
 
+
 	if ((perinfo.flag == DOMAIN_TRIANGLE) || (perinfo.flag == CROSSING_INS)) // otherwise the centroid can be assumed not moving??
 	{
 		f64_vec3 anti_Advect;
@@ -2190,40 +2191,31 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 				sizeof(long)*MAXNEIGH_d);
 			f64_vec3 A0 = A_vert[threadIdx.x]; // can ditch
 			f64_vec2 u0 = vertex_pos[threadIdx.x];
-			f64_vec3 A1(0.0,0.0,0.0),A2(0.0,0.0,0.0),A3(0.0,0.0,0.0);
-			f64_vec2 u1(0.0,0.0),u2(1.1,1.1),u3(1.0,2.0);
+			f64_vec3 A1,A2,A3;
+			f64_vec2 u1,u2,u3;
 			f64 //shoelace, 
-				area = 0.0; 
-
+				area = 0.0;
 			f64_vec2 edgenormal;
 			
 			// As before we need 4 A values and positions at a time. Now 3 all come from tris.
 			gradAx.x = 0.0; gradAx.y = 0.0; 
 			gradAy.x = 0.0; gradAy.y = 0.0; 
 			gradAz.x = 0.0; gradAz.y = 0.0; 
-						
+			
 			// Note that we found out, unroll can be slower if registers are used up (!) CAUTION:
 			
 			// Initial situation: inext = 1, i = 0, iprev = -1
 			long iindextri = IndexTri[threadIdx.x*MAXNEIGH_d+info.neigh_len-1];
 			// BEWARE OF FRILLED VERTCELLS: neigh_len < tri_len ??
 			
-			if ((iindextri >= StartTri) && (iindextri < StartTri +
-				blockDim.x)) // matching code above to see what happens
-				// threadsPerTileMinor))
+			if ((iindextri >= StartTri) && (iindextri < StartTri + threadsPerTileMinor))
 			{
-				// DOES NOT WORK WITH 2 LINES HERE.
-				A3 = A_tri[iindextri-StartTri]; // this breaks it
-				u3 = tri_centroid[iindextri-StartTri]; // this breaks it
+				A3 = A_tri[iindextri-StartTri];
+				u3 = tri_centroid[iindextri-StartTri];
 			} else {
 				A3 = p_A_tri[iindextri];
-				u3 = p_tri_centroid[iindextri]; 
+				u3 = p_tri_centroid[iindextri];
 			};
-			// The peculiar thing is that a very similar read happens earlier on.
-
-			// INCONSISTENT BEHAVIOUR: now does not work with all above reads commented.
-			// FAILS IF START COMMENT HERE
-			
 			if (info.has_periodic != 0) {
 				if ((u3.x > u3.y*GRADIENT_X_PER_Y*0.5) && (u3.x < -0.5*GRADIENT_X_PER_Y*u3.y))
 				{
@@ -2236,7 +2228,7 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 					u3 = Clockwise_rotate2(u3);
 				};
 			}
-			
+
 			iindextri = IndexTri[threadIdx.x*MAXNEIGH_d]; // + 0
 			if ((iindextri >= StartTri) && (iindextri < StartTri + threadsPerTileMinor))
 			{
@@ -2257,11 +2249,11 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 					A2 = Clockwise_rotate3(A2);
 					u2 = Clockwise_rotate2(u2);
 				};
-			}			
-			
+			}
+
+
 			int inext = 0; // will be ++ straight away.
-						
-#pragma unroll MAXNEIGH_d
+	#pragma unroll MAXNEIGH_d
 			for (int i = 0; i < info.neigh_len; i++)  // WHY ARE WE GOING TO MAXNEIGH_d ?
 			{
 				inext++;
@@ -2324,10 +2316,6 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 				A2 = A1;
 				u2 = u1;
 			}
-
-			// COMMENTED ENDING HERE FOR IT TO WORK
-
-
 			gradAx /= area;
 			gradAy /= area;
 			gradAz /= area;
@@ -2337,16 +2325,16 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 			anti_Advect.y = h*v_overall.dot(gradAy);
 			anti_Advect.z = h*v_overall.dot(gradAz);
 
-			// Save off: 
-			if (bAdd) {
+			// Save off:
+/*			if (bAdd) {
 				anti_Advect += h*p_Addition_Rate[BEGINNING_OF_CENTRAL + index];
 			}
 
-			p_A_out[BEGINNING_OF_CENTRAL + index] += anti_Advect; // best way may be: if we know start of central stuff, can send
+*/			p_A_out[BEGINNING_OF_CENTRAL + index] += anti_Advect; // best way may be: if we know start of central stuff, can send
 		
 		}; // ONLY FOR DOMAIN VERTEX
 	}; // IS THREAD IN THE FIRST HALF OF THE BLOCK
-
+	
 
 	// =============================================================================
 	// Understand the following important fact:

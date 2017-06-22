@@ -25,6 +25,7 @@ bool GlobalFlagNeedPeriodicImage, GlobalFlagNeedReflectedImage;
 long GlobalVerticesInRange;
 long GlobalTrianglesInfluencing;
 bool GlobalPeriodicSearch;
+extern int globaldebugswitch ;
 
 real InitialIonDensity(real x, real y)
 {
@@ -991,9 +992,6 @@ int TriMesh::Initialise(int token)
 			};
 		};
 	};
-	printf("X[36800].modulus %1.10E \n",X[36800].pos.modulus());
-
-	getch();
 
 	if (iVertex != numVertices) {
 		printf("summat wrong. iVertex %d numVertices %d \n",iVertex,numVertices);
@@ -4189,7 +4187,8 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 	static const real theta = 2.0*PI/16.0;
 	static const Tensor2 anticlock(cos(theta),-sin(theta),sin(theta),cos(theta));
 	static const Tensor2 clock(cos(theta),sin(theta),-sin(theta),cos(theta));
-	
+	FILE  * file;
+//	if (globaldebugswitch != 0) file = fopen("trail.txt","w");
 	//Idea:
 
 	// We start "in" an image tranche. -1 = to left; 0 = ours; 1 = to right
@@ -4254,6 +4253,25 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 
 	do
 	{
+		
+	//if (globaldebugswitch) {
+	//	fprintf(file,"tri %d  %f %f , %f %f , %f %f\n",
+	//		pTri-AuxT[0],
+	//		pTri->cornerptr[0]->pos.x,pTri->cornerptr[0]->pos.y,
+	//		pTri->cornerptr[1]->pos.x,pTri->cornerptr[1]->pos.y,
+	//		pTri->cornerptr[2]->pos.x,pTri->cornerptr[2]->pos.y);
+	//}
+
+
+		if (pTri-AuxT[0] == 18909) {
+			x = x;
+		}
+		if ((pTri->u8domain_flag == INNER_FRILL) || (pTri->u8domain_flag == OUTER_FRILL))
+		{
+			printf("pTri->u8 %d pTri-T %d x y %1.10E %1.10E \n",pTri->u8domain_flag,pTri-T,x,y);
+			getch();
+		}
+
 		test = pTri->TestAgainstEdges(x,y,&pNeigh);    // neighbour in the direction it transgressed
 
 		// Now TAE must be aware that it may be a periodic tri.
@@ -4422,18 +4440,26 @@ Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 		};
 
 		++iterationes;
-		Tranche = 0;
 		if ((iterationes >= 10000)) {
-			printf("iters 10000 x %1.14E y %1.14E pTri-T %d \n%1.14E %1.14E %1.14E \nTranche %d  %1.14E %1.14E %d %d %d \n",
-				x,y,pTri-T,
-				pTri->cornerptr[0]->pos.x/pTri->cornerptr[0]->pos.y,
-				pTri->cornerptr[1]->pos.x/pTri->cornerptr[1]->pos.y,
-				pTri->cornerptr[2]->pos.x/pTri->cornerptr[2]->pos.y,
-				Tranche,x/y,GRADIENT_X_PER_Y,
+  		//	fclose(file);
+			printf("iter10000 x %1.11E y %1.11E %1.8E\n"
+				    "x %1.11E %1.11E %1.11E\n"
+				    "y %1.11E %1.11E %1.11E \n"
+				    "r %1.11E %1.11E %1.11E \n"
+				    "vflag %d %d %d === ",
+				x,y,x/y,
+				pTri->cornerptr[0]->pos.x,pTri->cornerptr[1]->pos.x,pTri->cornerptr[2]->pos.x,
+				pTri->cornerptr[0]->pos.y,pTri->cornerptr[1]->pos.y,pTri->cornerptr[2]->pos.y,
+				//pTri->cornerptr[0]->pos.x/pTri->cornerptr[0]->pos.y,
+				pTri->cornerptr[0]->pos.modulus(),
+				pTri->cornerptr[1]->pos.modulus(),
+				pTri->cornerptr[2]->pos.modulus(),
 				pTri->cornerptr[0]->flags,
 				pTri->cornerptr[1]->flags,
 				pTri->cornerptr[2]->flags);
-			if (iterationes % 10000 == 0) getch();
+				printf("%d %d %d flag %d \n\n",
+					pTri-AuxT[0],pTri-AuxT[1],pTri-AuxT[2],pTri->u8domain_flag);
+ 			getch();
 		}
 	} while (test != 0); 
 	

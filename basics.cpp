@@ -1067,23 +1067,23 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 		pVertex->centroid = cp.CalculateBarycenter();
 
 		
-		if (iVertex == 36685) {
-			printf("vertex %d flag %d \n",iVertex,pVertex->flags);
-			for (i = 0; i < cp.numCoords; i++)
-				printf("%1.5E %1.5E ... %1.5E \n",cp.coord[i].x,cp.coord[i].y,
-											cp.coord[i].modulus());
-			printf("\n\n");
-			
-			for (i = 0; i < tri_len; i++)
-			{
-				pTri = T + izTri[i];
-				u = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
-				printf("%1.5E %1.5E ... %1.5E \n",u.x,u.y,u.modulus());			
-			};
+		//if (iVertex == 36685) {
+		//	printf("vertex %d flag %d \n",iVertex,pVertex->flags);
+		//	for (i = 0; i < cp.numCoords; i++)
+		//		printf("%1.5E %1.5E ... %1.5E \n",cp.coord[i].x,cp.coord[i].y,
+		//									cp.coord[i].modulus());
+		//	printf("\n\n");
+		//	
+		//	for (i = 0; i < tri_len; i++)
+		//	{
+		//		pTri = T + izTri[i];
+		//		u = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+		//		printf("%1.5E %1.5E ... %1.5E \n",u.x,u.y,u.modulus());			
+		//	};
 
-			getch();
-		}
-		
+		//	getch();
+		//}
+		//
 		++pVertex;
 	};
 }
@@ -2088,6 +2088,9 @@ int Triangle::TestAgainstEdge(real x,real y,
 	if (outside)
 	{
 		*ppNeigh = neighbours[other]; // neighbours is now always a valid value.
+		if ((neighbours[other]->u8domain_flag == OUTER_FRILL) ||
+			(neighbours[other]->u8domain_flag == INNER_FRILL))
+			*ppNeigh = this;
 		return 1;
 	};
 	return 0;
@@ -2675,8 +2678,58 @@ bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
 		real newx = Anticlockwise.xx*x+Anticlockwise.xy*y;
 		real newy = Anticlockwise.yx*x+Anticlockwise.yy*y;
 		x = newx; y = newy;
-	};
 
+		// Prioritize looking left.
+		if ((cornerptr[2]->pos.x > 0.0) && (cornerptr[1]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
+		if ((cornerptr[0]->pos.x > 0.0) && (cornerptr[2]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
+		if ((cornerptr[1]->pos.x > 0.0) && (cornerptr[0]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 0, 2, ppNeigh)) return 1;
+	
+		// Second favourite: stay within periodic.
+		if ((cornerptr[2]->pos.x > 0.0) || (cornerptr[1]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
+		if ((cornerptr[0]->pos.x > 0.0) || (cornerptr[2]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
+		if ((cornerptr[1]->pos.x > 0.0) || (cornerptr[0]->pos.x > 0.0))
+			if (TestAgainstEdge(x,y, 0, 2, ppNeigh)) return 1;
+	
+		// Got here: we'll have to exit to the left side of domain then.
+		if (TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
+		if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
+		if (TestAgainstEdge(x,y, 0, 2, ppNeigh)) return 1;
+	}; 
+	// Idea: We need to prioritize NOT CROSSING to the x < 0 side if the target x > 0.
+
+	// New attempt:
+
+	if ((neighbours[0]->u8domain_flag == OUTER_FRILL) || (neighbours[0]->u8domain_flag == INNER_FRILL)
+		|| (neighbours[0] == this))
+	{
+		// In this case:
+		// prioritize neighbours[1] and [2].
+
+		if(TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
+		if(TestAgainstEdge(x,y,	0,        // edge corner
+								2,        // the opposite point - ie which edge
+								ppNeigh)) // neighbour in this direction, if it's outside this way
+			return 1;
+
+		if(TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
+		return 0; // inside *this
+	}
+	if ((neighbours[1]->u8domain_flag == OUTER_FRILL) || (neighbours[1]->u8domain_flag == INNER_FRILL)
+		|| (neighbours[1] == this))
+	{
+		if (TestAgainstEdge(x,y, 0, 2, ppNeigh)) return 1;
+		if (TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
+		if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
+		return 0;
+	}
+	// Just changed the order of tests.
+
+	/*
 	if (neighbours[0] == this) {
 		
 		if(TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
@@ -2694,6 +2747,9 @@ bool Triangle::TestAgainstEdges(real x,real y, Triangle ** ppNeigh)
 		if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;
 		return 0;
 	}
+	*/
+	
+	if ((periodic != 0) && (x > 0.0))
 	
 	if (TestAgainstEdge(x,y, 1, 0, ppNeigh)) return 1;
 	if (TestAgainstEdge(x,y, 0, 1, ppNeigh)) return 1;

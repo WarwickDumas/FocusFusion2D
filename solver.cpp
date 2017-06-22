@@ -74,6 +74,8 @@ extern char * report_time(int action);
 extern real GetPossiblyPeriodicDist(Vector2 & vec1, Vector2 & vec2);
 extern real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2);
 
+int globaldebugswitch = 0;
+
 class CalculateAccelsClass
 {
 public:
@@ -4481,6 +4483,8 @@ void TriMesh::CreateAuxiliarySubmeshes(bool bJustAz)
 		pVertex = Xarray;
 		bool bDefault;
 		real weightsum[4];
+		int dbgctr = 0;
+
 		for (iVertex = 0; iVertex < numFine; iVertex++)
 		{	
 			if (pVertex->iVolley != 1) {
@@ -4669,6 +4673,18 @@ void TriMesh::CreateAuxiliarySubmeshes(bool bJustAz)
 						((AuxT[iLevel]+izTri[i])->ContainsPoint(pVertex->pos.x,pVertex->pos.y) == 0))
 						i++;
 					if (i == tri_len) {
+
+					//	printf("iLevel %d izTri[0] %d x y %1.9E %1.9E r %1.9E %1.5E %1.5E\n",iLevel,izTri[0],
+					//		pVertex->pos.x,pVertex->pos.y,pVertex->pos.modulus(),
+					//		pVertex->pos.modulus()-DOMAIN_OUTER_RADIUS,
+					//		INNER_A_BOUNDARY-pVertex->pos.modulus());
+
+					//	getch();
+						
+				//		if (izTri[0] == 18862) {
+				//			dbgctr++;
+				//			if (dbgctr == 2) globaldebugswitch = 1;
+				//		}
 						pTri = ReturnPointerToTriangleContainingPoint(
 										AuxT[iLevel]+izTri[0],  // seed for beginning triangle search
 										pVertex->pos.x,pVertex->pos.y); 
