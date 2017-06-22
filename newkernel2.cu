@@ -3869,7 +3869,6 @@ __global__ void Kernel_Rel_advect_v_central(
 		f64_vec3 v_out, v_next, v;									// + 9 = 28
 		
 		v = p_v[BEGINNING_OF_CENTRAL + index];
-		
 		n = p_nT_minor[BEGINNING_OF_CENTRAL + index].n;
 		v_overall = p_v_overall_minor[BEGINNING_OF_CENTRAL + index]; 
 		// ???????????????????????????????????????????????????????
@@ -3877,7 +3876,7 @@ __global__ void Kernel_Rel_advect_v_central(
 		nvrel.y = n*(v.y-v_overall.y);
 
 		// Assume we load in u_prev:
-		long indextri = IndexTri[info.neigh_len-1]; // bad news, neigh_len is not tri_len
+		long indextri = IndexTri[threadIdx.x*MAXNEIGH_d + info.neigh_len-1]; // bad news, neigh_len is not tri_len
 			
 		// ###############################################################################
 		// OOPS -- it's not true at the edge of memory, is it, so what will happen there?
@@ -3895,7 +3894,7 @@ __global__ void Kernel_Rel_advect_v_central(
 			nvrel_prev.x = n*(v_.x - v_overall.x);
 			nvrel_prev.y = n*(v_.y - v_overall.y);
 		};
-		char PBC = PBCtri[info.neigh_len-1];
+		char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + info.neigh_len-1];
 		if (PBC == NEEDS_CLOCK) 
 		{
 			// Always check these rotate flags throughout.
@@ -3940,7 +3939,7 @@ __global__ void Kernel_Rel_advect_v_central(
 		for (i = 0; i < info.neigh_len; i++)
 		{
 			inext = i+1; if (inext == info.neigh_len) inext = 0;
-			indextri = IndexTri[inext];
+			indextri = IndexTri[threadIdx.x*MAXNEIGH_d + inext];
 			if ((indextri >= StartTri) && (indextri < StartTri + SIZE_OF_TRI_TILE_FOR_MAJOR))
 			{
 				u_next = tri_centroid[indextri-StartTri];
@@ -3954,7 +3953,7 @@ __global__ void Kernel_Rel_advect_v_central(
 				nvrel_next.x = n*(v_next.x - v_overall.x);
 				nvrel_next.y = n*(v_next.y - v_overall.y);
 			}
-			PBC = PBCtri[index];
+			PBC = PBCtri[threadIdx.x*MAXNEIGH_d + inext];
 			if (PBC == NEEDS_CLOCK)
 			{
 				u_next = Clockwise_rotate2(u_next);
@@ -6120,7 +6119,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				
 				if //((OUTPUT) && (index == REPORT)) {
 					(//(Iz[threadIdx.x] > 1.0e6) || 
-				   (Iz[threadIdx.x] != Iz[threadIdx.x])){
+				   (Iz[threadIdx.x] != Iz[threadIdx.x]) && (index < BEGINNING_OF_CENTRAL)){
 					printf("%d Iz %1.5E sig %1.4E ne %1.4E vez %1.4E\n",
 							index,
 							//q*area*(v_ion_plus.z*n_ion_plus - v_e_0.z*n_e_plus),
