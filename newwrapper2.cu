@@ -86,7 +86,7 @@
 // -dlink command line:
 
 // E:\focusfusion\FFxtubes\cudaproj\x64\Release>
-// nvcc -dlink -gencode=arch=compute_20,code=\"sm_20,compute_20\" --machine 64 -ccbin "E:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\bin" newkernel2.cu.obj -o newkernel2.obj
+// nvcc -dlink -gencode=arch=compute_20,code=\"sm_20,compute_20\" --machine 64 -ccbin "E:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\bin" newwrapper2.cu.obj -o newwrapper2.obj
 
 // E:\focusfusion\FFxtubes\cudaproj\x64\Debug>
 //nvcc -dlink -gencode=arch=compute_20,code=\"sm_20,compute_20\" --machine 64 -Xcompiler "/EHsc /W3 /nologo /O2 /Zi /MTd "  -ccbin "E:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\bin" newkernel2.cu.obj -o newkernel2.obj
@@ -282,6 +282,10 @@ void PerformCUDA_Advance_2 (
 	long numVertices = numVerts;
 	real const hstep = hsub/(real)numSubsteps;
 	
+	nn * p_nn_host;
+	f64_vec3 * p_MAR_ion_host, * p_MAR_neut_host, * p_MAR_elec_host;
+
+
 	printf("sizeof(CHAR4): %d \n"
 		"sizeof(structural): %d \n"
 		"sizeof(LONG3): %d \n"
@@ -473,6 +477,13 @@ void PerformCUDA_Advance_2 (
 	p_scratch = (f64 *)malloc((numVertices+1000)*sizeof(f64));
 	p_scratch_info = (structural *)malloc((numVertices+1000)*sizeof(structural));
 	p_scratch_host = (f64 *)malloc((pX_host->Nminor+1000)*sizeof(f64));
+
+	p_nn_host = (nn *)malloc(pX_host->Nminor*sizeof(nn));
+	p_MAR_neut_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
+	p_MAR_ion_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
+	p_MAR_elec_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
+
+
 	// 2. cudaMemcpy system state from host: this happens always
 	// __________________________________________________________
 	
@@ -1006,13 +1017,9 @@ void PerformCUDA_Advance_2 (
 		if (cudaPeekAtLastError() != cudaSuccess) {
 			printf("Kernel_Compute_Grad_A_minor_antiadvect ___ %s\n",cudaGetErrorString(cudaGetLastError()));
 		} else {
-			printf("Kernel_CalculateCentralMinorAreas No error found at synchr,\n");
+			printf("Kernel_Compute_Grad_A_minor_antiadvect No error found at synchr,\n");
 		}
 
-
-		// Pretty sure the error here was putting numTilesMinor
-		// In fact we are reusing the data for each tri tile, to do centrals;
-		// correct?
 
 		Kernel_Compute_Grad_A_minor_antiadvect<<<numTriTiles,threadsPerTileMinor>>>(
 			pX1->p_A,        // for creating grad
@@ -1164,7 +1171,19 @@ void PerformCUDA_Advance_2 (
 			// It is probably not the end of the world if we split into 2's and 3's, nT vs v.
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect nT pXhalf");
-		
+
+		::Kernel_Average_nT_to_tri_minors<<<numTriTiles,threadsPerTileMinor>>>(
+										pXhalf->p_tri_corner_index,
+										pXhalf->p_tri_perinfo, 
+										pXhalf->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+										pXhalf->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+										pXhalf->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+										pXhalf->p_nT_neut_minor,
+										pXhalf->p_nT_ion_minor,
+										pXhalf->p_nT_elec_minor);
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXhalf");
+
+			
 		// 6b. Momentum advection for minor cells..
 		//  2 kinds of walls: central-to-tri and tri-to-tri.
 		
@@ -1185,6 +1204,7 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_v_neut      // output
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v tri neut");
+		
 		::Kernel_Rel_advect_v_central<<<numTilesMajor,threadsPerTileMajor>>>(
 			hstep*0.5,
 			pX1->p_info,
@@ -1192,15 +1212,20 @@ void PerformCUDA_Advance_2 (
 			pX1->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
 			pX1->p_nT_neut_minor,
 			pXhalf->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
-			pX1->p_v_neut + BEGINNING_OF_CENTRAL,
+			pX1->p_v_neut,
 			pX1->p_v_overall,
 			pX1->pIndexTri,
 			pX1->pPBCtri,
 			pX1->p_area,
 			pXhalf->p_area,
 			pXhalf->p_v_neut + BEGINNING_OF_CENTRAL 
-			);
-		
+			);		
+
+		if (cudaPeekAtLastError() != cudaSuccess) {
+			printf("Kernel_Rel_advect_v_central %s\n",cudaGetErrorString(cudaGetLastError()));
+		} else {
+			printf("Kernel_Rel_advect_v_central No error found at invoc,\n");
+		}
 
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut");
 		
@@ -1229,7 +1254,7 @@ void PerformCUDA_Advance_2 (
 			pX1->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
 			pX1->p_nT_ion_minor,
 			pXhalf->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
-			pX1->p_v_ion + BEGINNING_OF_CENTRAL,
+			pX1->p_v_ion,
 			pX1->p_v_overall,
 			pX1->pIndexTri,
 			pX1->pPBCtri,
@@ -1237,7 +1262,7 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_area,
 			pXhalf->p_v_ion + BEGINNING_OF_CENTRAL 
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent ion");
 		
 		::Kernel_Rel_advect_v_tris<<<numTriTiles,threadsPerTileMinor>>>(
 			hstep*0.5,
@@ -1255,7 +1280,7 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_area_minor,
 			pXhalf->p_v_elec
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v tri ion");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v tri elec");
 		
 		::Kernel_Rel_advect_v_central<<<numTilesMajor,threadsPerTileMajor>>>(
 			hstep*0.5,
@@ -1264,7 +1289,7 @@ void PerformCUDA_Advance_2 (
 			pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
 			pX1->p_nT_elec_minor,
 			pXhalf->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-			pX1->p_v_elec + BEGINNING_OF_CENTRAL,
+			pX1->p_v_elec,
 			pX1->p_v_overall,
 			pX1->pIndexTri,
 			pX1->pPBCtri,
@@ -1272,7 +1297,54 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_area,
 			pXhalf->p_v_elec + BEGINNING_OF_CENTRAL 
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent elec");
+		/*
+		cudaMemcpy(pX_host->p_nT_ion_minor,			pX1->p_nT_ion_minor,
+			sizeof(nT)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_nT_elec_minor,			pXhalf->p_nT_ion_minor,
+			sizeof(nT)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_ion,			pX1->p_v_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_elec,			pXhalf->p_v_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_area_minor,			pXhalf->p_area_minor,
+			sizeof(f64)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
+
+		printf("43654: n_ion %1.10E  %d : %1.10E \n",pX_host->p_nT_elec_minor[43654].n,
+			BEGINNING_OF_CENTRAL + 20000, pX_host->p_nT_elec_minor[BEGINNING_OF_CENTRAL + 20000].n);
+		
+
+		FILE * file = fopen("inputs0.txt","w");
+		fprintf(file,"index | pX1_v_ion_x y z | pXhalf_v_ion_x y z | 1n 1T n T \n");
+		
+		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
+		{
+			fprintf(file,"%d %d | %1.10E %1.10E %1.10E | %1.10E %1.10E %1.10E | "
+				"%1.10E %1.10E %1.10E %1.10E | %1.10E \n",
+				iMinor,pX_host->p_tri_perinfo[iMinor].flag,
+				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
+				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z,
+				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
+				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
+				pX_host->p_area_minor[iMinor]);
+		};
+		cudaMemcpy(pX_host->p_area_minor,			pX1->p_area_minor,
+			sizeof(f64)*Syst1.Nminor,
+			cudaMemcpyDeviceToHost);
+		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
+		{
+			fprintf(file,"%d %1.10E \n",iMinor,pX_host->p_area_minor[iMinor]);
+		};
+		fclose(file);*/
+		
+		// RESULT SO FAR: n, T look normal. v_ion is OK in X1, becomes IND/INF in Xhalf.
+		// From 85392 onwards, it's 0,0,large . To 73532 : IND=xy, INF=z.
 		
 		// ============================================================================
 		// Now do estimates for half-time system ready for midpoint calls:
@@ -1283,24 +1355,47 @@ void PerformCUDA_Advance_2 (
 		cudaMemset(p_MAR_ion,0,sizeof(f64_vec3)*pX1->Nminor);
 		cudaMemset(p_MAR_elec,0,sizeof(f64_vec3)*pX1->Nminor);
 
+		FILE * fp = fopen("tri_data.txt","w");
+		for (int iii = 0; iii < Syst1.Ntris; iii++)
+		{
+			fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
+				pX_host->p_tri_corner_index[iii].i2,
+				pX_host->p_tri_corner_index[iii].i3);
+		}
+		fclose(fp);
+
+		cudaMemcpy(pX_host->p_tri_corner_index,pX1->p_tri_corner_index,
+			sizeof(LONG3)*Syst1.Ntris,
+			cudaMemcpyDeviceToHost
+			);
+
+		fp = fopen("tri_data2.txt","w");
+		for (int iii = 0; iii < Syst1.Ntris; iii++)
+		{
+			fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
+				pX_host->p_tri_corner_index[iii].i2,
+				pX_host->p_tri_corner_index[iii].i3);
+		}
+		fclose(fp);
+
 		::Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor<<<numTriTiles, threadsPerTileMinor>>>
 			(
 				pXhalf->p_A,
 				pXhalf->p_A + BEGINNING_OF_CENTRAL,
-				pXhalf->p_info,
+				pXhalf->p_info, // does this make it work ?
 				pXhalf->p_tri_centroid,
 				pXhalf->p_tri_perinfo,
 				pXhalf->p_tri_per_neigh,
-				pXhalf->p_tri_corner_index,
+				pX1->p_tri_corner_index,
 				pXhalf->p_neigh_tri_index,
 				pXhalf->pIndexTri,
-				
 				pXhalf->p_Lap_A,
 				pXhalf->p_Lap_A + BEGINNING_OF_CENTRAL,
 				pXhalf->p_B,
 				pXhalf->p_B + BEGINNING_OF_CENTRAL
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute Lap A I");
+
 
 		::Kernel_Compute_grad_phi_Te_tris<<<numTriTiles, threadsPerTileMinor>>>
 			(
@@ -1409,6 +1504,95 @@ void PerformCUDA_Advance_2 (
 
 		// Now run midpoint v step on minor cells.
 		
+		printf("about to do midpoint.\n");
+		getch();
+
+		// I think for debugging it would be good here to dump all the inputs to host
+		// and spit it out to a spreadsheet.
+
+		cudaMemcpy(pX_host->p_nT_neut_minor,		pXhalf->p_nT_neut_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_nT_ion_minor,			pXhalf->p_nT_ion_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_nT_elec_minor,		pXhalf->p_nT_elec_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_nn_host,						p_nn_ionrec_minor,
+			sizeof(nn)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_tri_centroid,		pXhalf->p_tri_centroid,
+			sizeof(f64_vec2)*Syst1.Ntris,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_B,				pXhalf->p_B,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_neut,			pXhalf->p_v_neut,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_ion,			pXhalf->p_v_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_elec,			pXhalf->p_v_elec,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_grad_phi,			pXhalf->p_grad_phi,
+			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_Lap_A,			pXhalf->p_Lap_A,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_Adot,				pXhalf->p_Adot,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_neut_host,				p_MAR_neut,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_elec_host,				p_MAR_elec,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_GradTe,			pXhalf->p_GradTe,
+			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
+
+		FILE * file = fopen("inputs.txt","w");
+		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
+			"Bx By Bz vnx vny vnz vix viy viz vex vey vez | "
+			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Adot_x Adot_y Adot_z | "
+			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
+			"GradTe_x GradTe_y \n");
+
+		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
+		{
+			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
+				" %1.14E %1.14E ",
+				iMinor, 
+				
+				pX_host->p_nT_neut_minor[iMinor].n,pX_host->p_nT_neut_minor[iMinor].T,
+				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
+				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
+				p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
+				
+				pX_host->p_B[iMinor].x,pX_host->p_B[iMinor].y,pX_host->p_B[iMinor].z,
+
+				pX_host->p_v_neut[iMinor].x,pX_host->p_v_neut[iMinor].y,pX_host->p_v_neut[iMinor].z,
+				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
+				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z,
+				
+				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
+				
+				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
+				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,
+				
+				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
+				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
+				p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z,
+				
+				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y
+				);
+			if (iMinor < BEGINNING_OF_CENTRAL) 
+				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
+			fprintf(file,"\n");
+		};
+		fclose(file);
+		// v and gradphi come back as IND / viz,vez INF.
+
+		printf("inputs output done.\n");
+		getch();
+
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 			(
 				hstep,
@@ -2077,7 +2261,7 @@ void PerformCUDA_Advance_2 (
 		// Then check that the calcs are as claimed in each routine.
 		t += hstep;
 	};
-
+	
 	
 	// We intermittently return to CPU to do re-Delaunerization - to begin with.
 	// Otherwise only send data back, every 2.5e-11 s, for graphing. -> 20fps gives 2s/ns. 50s/25ns
@@ -2135,6 +2319,10 @@ void PerformCUDA_Advance_2 (
 	free(p_scratch_info);
 	free(p_Iz0_initial_host);
 	free(p_scratch_host);
+	free(p_nn_host);
+	free(p_MAR_neut_host);
+	free(p_MAR_ion_host);
+	free(p_MAR_elec_host);
 
 	printf("Transferred back.\n");
 	

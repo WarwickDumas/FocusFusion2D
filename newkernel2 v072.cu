@@ -2509,12 +2509,30 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		// THIS BIT IS ENOUGH TO CRASH IT:
 		if ((corner_index.i1 >= StartMajor) && (corner_index.i1 < StartMajor + SIZE_OF_MAJOR_PER_TRI_TILE))
 		{
-			pos0 = vertex_pos[corner_index.i1-StartMajor]; // this line okay
+			//pos0 = vertex_pos[corner_index.i1-StartMajor]; // this line okay
 		} else {
-			structural info = p_info[corner_index.i1];
-			pos0 = info.pos;	
+			// This bit breaks it:
+
+			//structural info = p_info[corner_index.i1];
+			
+			if ((corner_index.i1 >= 0) && (corner_index.i1 < 36864))
+			{
+				// Debug: Rule out that it's a bad index
+				structural info = p_info[corner_index.i1];
+				pos0 = info.pos;
+			} else {
+				printf("%d %d %d %d \n##################################################\n",
+					index,corner_index.i1,corner_index.i2, corner_index.i3);
+
+				// comes out with big negative
+				// same thing applies when we call with pX1->tri_corner_index
+
+				// When we output tri_corner_index it is all valid.
+
+			};
+		
 		}
-		if ((corner_index.i2 >= StartMajor) && (corner_index.i2 < StartMajor + SIZE_OF_MAJOR_PER_TRI_TILE))
+	/*	if ((corner_index.i2 >= StartMajor) && (corner_index.i2 < StartMajor + SIZE_OF_MAJOR_PER_TRI_TILE))
 		{
 			pos1 = vertex_pos[corner_index.i2-StartMajor];
 		} else {
@@ -2527,7 +2545,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		} else {
 			structural info = p_info[corner_index.i3];
 			pos2 = info.pos;
-		}
+		}*/
 		
 		char periodic = perinfo.per0 + perinfo.per1 + perinfo.per2;
 		
@@ -2564,7 +2582,11 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		};
 		
 		f64_vec2 u0(0.0,0.0),u1(1.0,1.0),u2(1.0,3.0); // to be the positions of neighbouring centroids
-			
+	
+
+
+
+		/*
 		if ((neightri.i1 >= StartTri) && (neightri.i1 < StartTri + threadsPerTileMinor))
 		{
 			u0 = tri_centroid[neightri.i1-StartTri];
@@ -2605,7 +2627,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		}
 		if (tri_rotate.per2 == NEEDS_ANTI) {
 			u2 = Anticlock_rotate2(u2);
-		}
+		}*/
 
 
 		// ............................................................................................
@@ -2625,7 +2647,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 				 A_2(4.0,5.0,6.0);
 		
 		// Our A: A_tri[threadIdx.x]
-		
+		/*
 		// Now fill in the A values:
 		// ____________________________
 		if ((corner_index.i2 >= StartMajor) && (corner_index.i2 < StartMajor + SIZE_OF_MAJOR_PER_TRI_TILE))
@@ -2654,7 +2676,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			A_2 = Clockwise_rotate3(A_2);
 		};
 		
-		
+		/*
 		if ((neightri.i1 >= StartTri) && (neightri.i1 < StartTri + threadsPerTileMinor))
 		{
 			A_out = A_tri[neightri.i1-StartTri];
@@ -2667,7 +2689,13 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			} else {
 				A_out = Anticlock_rotate3(A_out);
 			};
-		};
+		};*/
+
+
+
+
+
+
 
 		// ======================================================
 		
@@ -2721,7 +2749,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		// Now that we put minor corners at (1/3)(2 centroids+vertex), this makes even more sense.
 		
 		area += 0.333333333333333*(0.5*(pos1.x+pos2.x)+ourpos.x+u0.x)*edgenormal.x;
-		
+		/*
 		// ASSUMING ALL VALUES VALID (consider edge of memory a different case):
 		//  From here on is where it gets thorny as we no longer map A_1 to vertex 1.
 		// %%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%%
@@ -2978,12 +3006,12 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 		
 		area += 0.333333333333333*(0.5*(u0.x+u2.x)+ourpos.x+pos1.x)*edgenormal.x;
-		
+		*/
 		// CHECKED ALL THAT 
 		
 		// Heavy calcs are actually here: six divisions!
-		LapA /= (area);
-		B /= (area);		
+		LapA /= (area + 1000.0);
+		B /= (area + 1000.0);		 // DEBUG
 	} else {
 		// frill - leave Lap A = B = 0
 	}
@@ -3008,6 +3036,11 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 	// Workaround taken from http://stackoverflow.com/questions/16077464/atomicadd-for-double-on-gpu
 	// Eventually decided not to use but to carry on with half the threads to target centrals in this routine.
 	
+	
+	/*
+
+	// COMMENTED FOR DEBUG:
+
 
 	if (threadIdx.x < SIZE_OF_MAJOR_PER_TRI_TILE) {
 		// Create Lap A for centrals.
@@ -3164,7 +3197,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		p_Lap_A_central[index] = LapA; // best way may be: if we know start of central stuff, can send
 		p_B_central[index] = B;        // into the 1 array where it belongs.
 	}
-	
+	*/
 	
 	// =============================================================================
 	// Understand the following important fact:
@@ -4660,15 +4693,6 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		// Grad of phi on tri is grad for this minor within the tri:
 		p_grad_phi[index] = grad_phi;
 		p_GradTe[index] = GradTe;
-
-		if (index == 50000) {
-			printf("Grad phi:\n\nphi012 %1.9E %1.9E %1.9E\n"
-				"pos0xy %1.9E %1.9E pos1 %1.9E %1.9E pos2  %1.9E %1.9E\n"
-				"area %1.9E \n----------------------------------\n",
-				phi0,phi1,phi2,
-				pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y,
-				area);
-		}
 	} else {
 		f64_vec2 zero(0.0,0.0);
 		p_grad_phi[index] = zero;
@@ -4916,16 +4940,6 @@ __global__ void Get_Lap_phi_on_major(
 			phi_clock = phi_out;
 			phi_out = phi_anti;		
 		};
-		if (index == 25000) {
-			printf("25000: Lapphi %1.10E area %1.9E phi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",Lapphi,Area,
-				phi_clock, phi_out,phi_anti, phi);
-			printf("pos %1.10E %1.10E %1.10E %1.10E %1.10E %1.10E \n",
-				pos_clock.x,pos_clock.y, pos_out.x,pos_out.y,pos_anti.x,pos_anti.y);
-			
-			// phi = 0 , Lapphi = IND , pos is filled in, area is sensible value.
-			
-		}
-
 		break;
 	
 	case OUTERMOST:
@@ -5315,10 +5329,6 @@ __global__ void Kernel_Advance_Antiadvect_phidot(
 		phidot + move.dot(grad_phidot)
 			+ h_use*csq*(Lap_phi + FOURPI_Q*(nT_ion.n-nT_elec.n));
 	
-	if (index == 25000) {
-		printf("phidot %1.10E movedot %1.10E Lapphi %1.10E \n",
-			phidot,move.dot(grad_phidot),Lap_phi);
-	};
 	// CHECK SIGNS
 	// We are giving the value at the moved point.
 	
@@ -5346,11 +5356,7 @@ __global__ void Kernel_Advance_Antiadvect_phi
 	
 	p_phi_out[index] = 
 		phi + move.dot(grad_phi) + h_use*phidot;
-
-	if (index == 25000) {
-		printf("phi %1.10E movedot %1.10E hphidot %1.10E \n",
-			phi,move.dot(grad_phi),h_use*phidot);
-	};	
+	
 }
 
 __global__ void Kernel_Antiadvect_A_allminor
