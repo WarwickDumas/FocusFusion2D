@@ -34,6 +34,12 @@
 
 // Debugging ... there is a kernel launch failure for Antiadvect Adot
 
+// Version 0.8: 
+
+// Change to set phi at innermost and outermost instead of trying to handle
+// insulator special conditions.
+// Am I sure? yes.
+
 
 
 
@@ -1144,7 +1150,8 @@ __global__ void Kernel_RelAdvect_nT(
 	}
 	__syncthreads(); // Avoid putting within branch.
 	
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) 
+	if ((info.flag == DOMAIN_VERTEX)) 
+		// || (info.flag == OUTERMOST))  // 29/06/17
 	{
 		// h*n*v.dot(edgenormal) is amount of traffic between major cells
 		
@@ -1311,14 +1318,28 @@ __global__ void Kernel_RelAdvect_nT(
 		                -0.111111111111111*(nT_out.n-nTsrc.n)*(nT_out.n-nTsrc.n)/(nTsrc.n*nTsrc.n));
 		// Note: 2 divisions vs 1 call to pow
 		
+
+		// ?:
+		// Where is recognition that we cannot flow into insulator? Depends just on v_r = 0??
+
+
 		p_nT_neut_out[index] = nT_out;	
-	} // whether DOMAIN VERTEX --- try with and without.
+	} else {  // whether DOMAIN VERTEX 
+		
+		p_nT_neut_out[index] = p_nT_neut[index];
+	};
+	
 	__syncthreads(); // avoid syncthreads within branch.
 	
+	// Now we allow additional inflow from OUTERMOST. 29/06/17
 
+	// That means basically electrons moving in. Then we want to get rid of them
+	// each step, send them up per z current.
+	
+	
 	// + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + + 
-
-
+	
+	
 	// Ready for next species:
 	//if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))  
 	{	// The point here is to reuse both the tri indices and the centroids.
@@ -1355,7 +1376,8 @@ __global__ void Kernel_RelAdvect_nT(
 	f64_vec2 nv1, nvT1, pos1, nv2, nvT2, pos2;
 	nT nT1, nT2;
 
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST))  {
+	if ((info.flag == DOMAIN_VERTEX))// || (info.flag == OUTERMOST))  {
+	{
 		// h*n*v.dot(edgenormal) is amount of traffic between major cells
 		
 		nT nTsrc = p_nT_ion[index];
@@ -1473,7 +1495,10 @@ __global__ void Kernel_RelAdvect_nT(
 		                -0.111111111111111*(nT_out.n-nTsrc.n)*(nT_out.n-nTsrc.n)/(nTsrc.n*nTsrc.n));
 		
 		p_nT_ion_out[index] = nT_out;
-	};
+	} else {
+		
+		p_nT_ion_out[index] = p_nT_ion[index];
+	}
 	
 	// The point here is to reuse both the tri indices and the centroids.
 	
@@ -1505,7 +1530,7 @@ __global__ void Kernel_RelAdvect_nT(
 	__syncthreads(); // Avoid putting within branch.
 
 	
-	if ((info.flag == DOMAIN_VERTEX) || (info.flag == OUTERMOST)) {
+	if ((info.flag == DOMAIN_VERTEX)) { // || (info.flag == OUTERMOST)) {
 		nT nTsrc = p_nT_elec[index];
 		short iNeigh1 = info.neigh_len-1;
 		short iNeigh2 = 0;
@@ -1610,26 +1635,29 @@ __global__ void Kernel_RelAdvect_nT(
 				// The answer is to include OUTERMOST flag, but, disinclude the outermost edge of an OUTERMOST vertex.
 				// This can happen automatically by a CAREFUL NUMBERING of outermost tris and neighs.
 				// Does it disagree with the numbering we previously considered canonical? Probably yes --> edit through :-/
-				
 			};			
+			
 			nvT1 = nvT2;
 			nv1 = nv2;
 			pos1 = pos2;
 		}; // next neigh		
 		mass += nTsrc.n*area_old;
-		heat += nTsrc.n*nTsrc.T; // ??? ***
+		heat += nTsrc.n*nTsrc.T*area_old; 
 
 		nT nT_out;
-		
 		nT_out.n = mass/area_new;
 		nT_out.T = heat/mass;		
+
 		// Compressive heating:
 		// We need here new area and old area:		
 		nT_out.T *= (1.0-0.666666666666667*(nT_out.n-nTsrc.n)/nTsrc.n
 		                -0.111111111111111*(nT_out.n-nTsrc.n)*(nT_out.n-nTsrc.n)/(nTsrc.n*nTsrc.n));
-		
+
 		p_nT_elec_out[index] = nT_out;
-	};	
+	} else {
+		
+		p_nT_elec_out[index] = p_nT_elec[index];
+	};
 }
 
 
@@ -2157,7 +2185,9 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 		anti_Advect.y = h*v_overall.dot(gradAy);
 		anti_Advect.z = h*v_overall.dot(gradAz);
 	
-		p_A_out[index] += anti_Advect;
+		p_A_out[index] = A_tri[threadIdx.x] + anti_Advect;
+	} else {
+		p_A_out[index] = A_tri[threadIdx.x];
 	}
 
 	// Similar routine will be needed to create grad A ... or Adot ... what a waste of calcs.
@@ -2325,9 +2355,6 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 				u2 = u1;
 			}
 
-			// COMMENTED ENDING HERE FOR IT TO WORK
-
-
 			gradAx /= area;
 			gradAy /= area;
 			gradAz /= area;
@@ -2341,12 +2368,13 @@ __global__ void Kernel_Compute_Grad_A_minor_antiadvect(
 			if (bAdd) {
 				anti_Advect += h*p_Addition_Rate[BEGINNING_OF_CENTRAL + index];
 			}
-
-			p_A_out[BEGINNING_OF_CENTRAL + index] += anti_Advect; // best way may be: if we know start of central stuff, can send
-		
-		}; // ONLY FOR DOMAIN VERTEX
+			p_A_out[BEGINNING_OF_CENTRAL + index] = A_vert[threadIdx.x] + anti_Advect; // best way may be: if we know start of central stuff, can send
+			
+		} else { // ONLY FOR DOMAIN VERTEX
+			p_A_out[BEGINNING_OF_CENTRAL + index] = A_vert[threadIdx.x];
+		};
 	}; // IS THREAD IN THE FIRST HALF OF THE BLOCK
-
+	
 
 	// =============================================================================
 	// Understand the following important fact:
@@ -3195,7 +3223,6 @@ __global__ void Kernel_Rel_advect_v_tris (
 	f64 * __restrict__ p_area_new,
 
 	f64_vec3 * __restrict__ p_v_out
-	
 	)
 {
 	// Idea of momentum advection
@@ -3233,7 +3260,7 @@ __global__ void Kernel_Rel_advect_v_tris (
 	__shared__ f64_vec2 n_vrel_central[SIZE_OF_MAJOR_PER_TRI_TILE];
 	__shared__ f64_vec3 v_central[SIZE_OF_MAJOR_PER_TRI_TILE];
 	__shared__ f64_vec2 vertex_pos[SIZE_OF_MAJOR_PER_TRI_TILE];   // 2 + 1 + 3+ 1.5 +2 +1 = 10.5
-	
+	 
 	// It is more certain that something vile does not go wrong, if we do stick with loading
 	// tri index each central.
 	// But we don't have room for that here due to sharing v_central.
@@ -3781,7 +3808,10 @@ __global__ void Kernel_Rel_advect_v_tris (
 		////}
 		////
 	} else {
+		// Not DOMAIN_TRIANGLE:
+
 		// Set v = 0?
+
 	};
 
 	// Now move on to centrals with the same data in memory.
@@ -4008,6 +4038,8 @@ __global__ void Kernel_Rel_advect_v_central(
 		f64 dest_n = p_nT_new[index].n;
 		p_v_out[index] = (Nv / (dest_n*area_new));
 	} else {
+		// Not DOMAIN_VERTEX
+
 		f64_vec3 zero(0.0,0.0,0.0);
 		p_v_out[index] = zero;
 	};
@@ -4065,8 +4097,7 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 	if (info.flag == DOMAIN_VERTEX) {
 		// Don't bother otherwise, right?
 		memcpy(indexneigh + threadIdx.x*MAXNEIGH_d, p_indexneigh + MAXNEIGH_d*index, sizeof(long)*MAXNEIGH_d);
-		
-		
+				
 		f64_vec2 grad_phi_integrated(0.0,0.0);
 		f64_vec2 grad_Te_integrated(0.0,0.0);
 		f64 grad_x_integrated_x = 0.0;
@@ -4102,7 +4133,6 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 		
 		for (iNeigh2 = 0; iNeigh2 < info.neigh_len; iNeigh2++)
 		{
-			
 			long indexNeigh = indexneigh[threadIdx.x*MAXNEIGH_d + iNeigh2];
 			if ((indexNeigh >= StartMajor) && (indexNeigh < EndMajor))
 			{
@@ -4114,7 +4144,7 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 				structural infotemp = p_info_sharing[indexNeigh];
 				pos2 = infotemp.pos;
 				nT nTtemp = p_nT_elec[indexNeigh];
-				Te2 = nTtemp.T;
+				Te2 = nTtemp.T; // undefined if this neighbour is inside ins
 			};
 			if (info.has_periodic) {
 				if ((pos2.x > 0.5*pos2.y*GRADIENT_X_PER_Y) &&
@@ -4132,16 +4162,6 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 			// Now we've got contiguous pos1, pos2, and own pos.
 			
 			f64_vec2 edge_normal;
-		//	edge_normal.x = pos1.y-info.pos.y;
-		//	edge_normal.y = info.pos.x-pos1.x;
-		//	if (edge_normal2.dot(pos2-info.pos) > 0.0)
-		//	{
-		//		edge_normal.x = -edge_normal.x;
-		//		edge_normal.y = -edge_normal.y;
-		//	}
-		//	grad_phi_integrated += edge_normal*0.5*(phi0+phi1);
-		//	grad_x_integrated_x += edge_normal.x*0.5*(info.pos.x+pos1.x);
-
 			edge_normal.x = pos1.y-pos2.y;
 			edge_normal.y = pos2.x-pos1.x;
 			if (edge_normal.dot(info.pos-pos1) > 0.0) {
@@ -4152,34 +4172,40 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 			grad_Te_integrated += edge_normal*0.5*(Te1+Te2);
 			grad_x_integrated_x += edge_normal.x*0.5*(pos1.x+pos2.x);
 			
-			//edge_normal.x = info.pos.y-pos2.y;
-			//edge_normal.y = pos2.x-info.pos.x;
-			//if (edge_normal.dot(pos1-pos2) > 0.0) {
-			//	edge_normal.x = -edge_normal.x;
-			//	edge_normal.y = -edge_normal.y;
-			//}
-			//grad_phi_integrated += edge_normal*0.5*(phi0+phi2);
-			//grad_x_integrated_x += edge_normal.x*0.5*(info.pos.x+pos2.x);
-			
-			// We want to sum to get the average of grad phi weighted by
-			// area of triangle:
-			
-			// Not sure I can make sense of this now...
-
+			if (index == 11685) {
+				printf("11685: grad_phi_integrated %1.10E %1.10E\n"
+					"phi12 %1.6E %1.6E edgenormal %1.6E %1.6E\n "	,
+					grad_phi_integrated.x,grad_phi_integrated.y,
+					phi1,phi2,edge_normal.x,edge_normal.y);
+			}
+			// This should now be fine since phi values defined in insulator.
 			phi1 = phi2;
 			pos1 = pos2;
 		}
 		p_grad_phi[index] = grad_phi_integrated/grad_x_integrated_x;
 		p_grad_Te[index] = grad_Te_integrated/grad_x_integrated_x;
 		
-		// Note that we accumulated edge_normal*(phi0+phi1) so that it
-		// cancelled out between every edge being counted each way.
-		// Therefore we only need the outward facing edges, the rest cancel to 0.
 	} else {
 		f64_vec2 zero(0.0,0.0);
 		p_grad_phi[index] = zero;
 		p_grad_Te[index] = zero;
 	}
+}
+
+
+__global__ void Kernel_InitialisePhi(
+	structural * __restrict__ p_info_sharing,
+	f64 k1_phiinit, f64 k2_phiinit,
+	f64 * __restrict__ p_phi_out
+							  )
+{
+	long index = blockIdx.x*blockDim.x+threadIdx.x;
+	structural info = p_info_sharing[index];
+	f64 r = info.pos.modulus();
+	p_phi_out[index] = k1_phiinit*log(r)+k2_phiinit;
+
+	// ?:
+	// What about setting outermost/innermost phi values on a step.
 }
 
 
@@ -4661,10 +4687,13 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		p_grad_phi[index] = grad_phi;
 		p_GradTe[index] = GradTe;
 
-		if (index == 50000) {
-			printf("Grad phi:\n\nphi012 %1.9E %1.9E %1.9E\n"
+		if (index == 73400) {
+			printf("73400 Grad phi:\n"
+				"%d %d %d\n"
+				"phi012 %1.9E %1.9E %1.9E\n"
 				"pos0xy %1.9E %1.9E pos1 %1.9E %1.9E pos2  %1.9E %1.9E\n"
 				"area %1.9E \n----------------------------------\n",
+				corner_index.i1,corner_index.i2,corner_index.i3,
 				phi0,phi1,phi2,
 				pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y,
 				area);
@@ -4706,6 +4735,7 @@ __global__ void Get_Lap_phi_on_major(
 
 	p_phi_shared[threadIdx.x] = p_phi[index];
 	structural info = p_info_sharing[index];
+	structural info2;
 	p_vertex_pos_shared[threadIdx.x] = info.pos;
 	
 	// We are going to want tri centroids to know the edge of the major cell.
@@ -4716,24 +4746,20 @@ __global__ void Get_Lap_phi_on_major(
 	
 	f64 Lapphi = 0.0, Area = 0.0;
 	
-	if ( (info.flag != DOMAIN_VERTEX) && (info.flag != OUTERMOST) ) {
-		return;
-		
-	}
-	// We might like to treat the OUTERMOST case.:
-	//short limit = info.neigh_len;
-	//if (info.flag == OUTERMOST) limit++; // Ensure it's tri 4 and 0 on edge towards neigh 0.
-
-	// Yeah that's no good ... this is neighs not tris. Pay attention.
-
-	
 	long indexneigh;
 
-	switch(info.flag)
+	// New plan for Lap phi.
+	// It exists wherever phi evolves, that is anywhere that is not outermost or innermost
+	// In those cases let Lap phi = 0 and it is never to be used.
+
+	if ((info.flag == INNERMOST) || (info.flag == OUTERMOST))
 	{
-	case DOMAIN_VERTEX:
+		Area = 1.0; // lap phi = 0
+
+	} else {
 	
-		
+//case DOMAIN_VERTEX:
+			
 		// Now we've got to load up what we need for the edge of the major cell.
 		// Did we do this anywhere else?
 		phi = p_phi_shared[threadIdx.x];
@@ -4750,8 +4776,8 @@ __global__ void Get_Lap_phi_on_major(
 			pos_clock = p_vertex_pos_shared[indexneigh-StartMajor];
 			phi_clock = p_phi_shared[indexneigh-StartMajor];
 		} else {
-			info = p_info_sharing[indexneigh];
-			pos_clock = info.pos;
+			info2 = p_info_sharing[indexneigh];
+			pos_clock = info2.pos;
 			phi_clock = p_phi[indexneigh];
 		};
 
@@ -4771,8 +4797,8 @@ __global__ void Get_Lap_phi_on_major(
 			pos_out = p_vertex_pos_shared[indexneigh-StartMajor];
 			phi_out = p_phi_shared[indexneigh-StartMajor];
 		} else {
-			info = p_info_sharing[indexneigh];
-			pos_out = info.pos;
+			info2 = p_info_sharing[indexneigh];
+			pos_out = info2.pos;
 			phi_out = p_phi[indexneigh];
 		};
 		PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + 0];
@@ -4792,8 +4818,8 @@ __global__ void Get_Lap_phi_on_major(
 				pos_anti = p_vertex_pos_shared[indexneigh-StartMajor];
 				phi_anti = p_phi_shared[indexneigh-StartMajor];
 			} else {
-				info = p_info_sharing[indexneigh];
-				pos_anti = info.pos;
+				info2 = p_info_sharing[indexneigh];
+				pos_anti = info2.pos;
 				phi_anti = p_phi[indexneigh];
 			};
 			PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + inext];
@@ -4823,7 +4849,6 @@ __global__ void Get_Lap_phi_on_major(
 			// ie we should not be using Inner values to get gradient when looking left + right
 			// at ins.
 
-// COMMENTED FOR DEBUGGING WHY IT LAUNCH FAILURES 
 			if (pos_out.x*pos_out.x+pos_out.y*pos_out.y < DEVICE_INSULATOR_OUTER_RADIUS*DEVICE_INSULATOR_OUTER_RADIUS)
 			{
 				// Zero contribution, looking into insulator
@@ -4891,17 +4916,24 @@ __global__ void Get_Lap_phi_on_major(
 						// same coeff to phi for grad_x integrated as on x_0 in shoelace:
 						// same coeff to phi_anti for grad_y as on y_anti in shoelace:
 
-					// succeed with this out:
 						Lapphi += ( (phi - phi_out) * ( (pos_anti.y-pos_clock.y)*edgenormal.x
 													  + (pos_clock.x-pos_anti.x)*edgenormal.y )  
-					// still fails with this out too:
 								+	(phi_anti-phi_clock)*( (pos_out.y - info.pos.y)*edgenormal.x
 													  + (info.pos.x - pos_out.x)*edgenormal.y) )
-				
-				//					// divide by shoelace :
 							/ ( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
 							  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) );
-						
+
+					//	if (index == 25000) {
+					//	printf("25000: Lapphi %1.10E area %1.9E \nphi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",
+					//		Lapphi,Area,
+					//		phi_clock, phi_out,phi_anti, phi);
+					//	printf("shoelace: %1.10E \n",
+					//		( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
+					//		  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) ));
+					//	printf("infopos %1.10E %1.10E \npos_out %1.10E %1.10E \npos_clk %1.10E %1.10E \npos_ant %1.10E %1.10E \n",
+					//		 info.pos.x,info.pos.y,pos_out.x,pos_out.y,
+					//		 pos_clock.x,pos_clock.y,pos_anti.x,pos_anti.y);
+					//	};
 						// Think divide by zero is the reason it crashes. Nope. Still fails without division.
 
 						Area += 0.5*(pos_clock.x + pos_anti.x)*edgenormal.x;
@@ -4916,17 +4948,16 @@ __global__ void Get_Lap_phi_on_major(
 			phi_clock = phi_out;
 			phi_out = phi_anti;		
 		};
-		if (index == 25000) {
-			printf("25000: Lapphi %1.10E area %1.9E phi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",Lapphi,Area,
-				phi_clock, phi_out,phi_anti, phi);
-			printf("pos %1.10E %1.10E %1.10E %1.10E %1.10E %1.10E \n",
-				pos_clock.x,pos_clock.y, pos_out.x,pos_out.y,pos_anti.x,pos_anti.y);
-			
-			// phi = 0 , Lapphi = IND , pos is filled in, area is sensible value.
-			
-		}
+	};
+	//	if (index == 25000) {
+	//		printf("25000: Lapphi %1.10E area %1.9E phi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",Lapphi,Area,
+	//			phi_clock, phi_out,phi_anti, phi);
+	//		printf("pos %1.10E %1.10E %1.10E %1.10E %1.10E %1.10E \n",
+	//			pos_clock.x,pos_clock.y, pos_out.x,pos_out.y,pos_anti.x,pos_anti.y);
+			// phi = 0 , Lapphi = IND , pos is filled in, area is sensible value.		
+	//	}
 
-		break;
+	/*	break;
 	
 	case OUTERMOST:
 		// In this case we have e.g. if there are 4 neighs 0,1,2,3, then just 0-1-2, 1-2-3
@@ -4948,8 +4979,8 @@ __global__ void Get_Lap_phi_on_major(
 			pos_clock = p_vertex_pos_shared[indexneigh-StartMajor];
 			phi_clock = p_phi_shared[indexneigh-StartMajor];
 		} else {
-			info = p_info_sharing[indexneigh];
-			pos_clock = info.pos;
+			info2 = p_info_sharing[indexneigh];
+			pos_clock = info2.pos;
 			phi_clock = p_phi[indexneigh];
 		};
 
@@ -4965,8 +4996,8 @@ __global__ void Get_Lap_phi_on_major(
 			pos_out = p_vertex_pos_shared[indexneigh-StartMajor];
 			phi_out = p_phi_shared[indexneigh-StartMajor];
 		} else {
-			info = p_info_sharing[indexneigh];
-			pos_out = info.pos;
+			info2 = p_info_sharing[indexneigh];
+			pos_out = info2.pos;
 			phi_out = p_phi[indexneigh];
 		};
 		PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + 1];
@@ -4985,8 +5016,8 @@ __global__ void Get_Lap_phi_on_major(
 				pos_anti = p_vertex_pos_shared[indexneigh-StartMajor];
 				phi_anti = p_phi_shared[indexneigh-StartMajor];
 			} else {
-				info = p_info_sharing[indexneigh];
-				pos_anti = info.pos;
+				info2 = p_info_sharing[indexneigh];
+				pos_anti = info2.pos;
 				phi_anti = p_phi[indexneigh];
 			};
 			PBC = PBCneigh[MAXNEIGH_d*threadIdx.x + inext];
@@ -5008,9 +5039,28 @@ __global__ void Get_Lap_phi_on_major(
 						// divide by shoelace :
 				/ ( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
 				  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) );
+			// Dividing by 0.
 			
 			Area += 0.5*(pos_clock.x + pos_anti.x)*edgenormal.x;
 		
+			if (index == 11685) {
+				printf("11685: Lapphi %1.8E Area %1.8E \n"
+					"phi %1.5E phi_out %1.5E anti %1.5E clk %1.5E\n"
+					"shoelace %1.5E\n",
+					Lapphi,Area,
+					phi,phi_out,phi_anti,phi_clock,
+					( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
+					+ (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) )
+					);
+				printf("info.pos %1.8E %1.8E\n"
+					   "pos_out  %1.8E %1.8E\n"
+					   "pos_anti %1.8E %1.8E\n"
+					   "pos_clk  %1.8E %1.8E\n",
+					   info.pos.x,info.pos.y, pos_out.x,pos_out.y,pos_anti.x,pos_anti.y,pos_clock.x,pos_clock.y);
+
+				// Getting Lapphi -1.#IND0000E+000 Area -8.60120926E-004
+				// phi 0.00000E+000 phi_out 0.00000E+000 anti 0.00000E+000 clk 0.00000E+000
+			}
 			// Now go round:		
 			pos_clock = pos_out;
 			pos_out = pos_anti;
@@ -5019,7 +5069,7 @@ __global__ void Get_Lap_phi_on_major(
 		};
 		break;		
 		
-	};
+	};*/
 
 	// integral of div f = sum of [f dot edgenormal]
 	// ... so here we took integral of div grad f.
@@ -5315,7 +5365,7 @@ __global__ void Kernel_Advance_Antiadvect_phidot(
 		phidot + move.dot(grad_phidot)
 			+ h_use*csq*(Lap_phi + FOURPI_Q*(nT_ion.n-nT_elec.n));
 	
-	if (index == 25000) {
+	if (index == 36797) {
 		printf("phidot %1.10E movedot %1.10E Lapphi %1.10E \n",
 			phidot,move.dot(grad_phidot),Lap_phi);
 	};
@@ -5330,6 +5380,8 @@ __global__ void Kernel_Advance_Antiadvect_phidot(
 
 __global__ void Kernel_Advance_Antiadvect_phi
 (
+	structural * __restrict__ p_info,
+	f64 V,
 	f64 * __restrict__ p_phi,
 	f64_vec2 * p_v_overall_major, 
 	f64 h_use,
@@ -5339,15 +5391,25 @@ __global__ void Kernel_Advance_Antiadvect_phi
 	)
 {
 	long index = blockDim.x*blockIdx.x + threadIdx.x;
+	structural info = p_info[index];
 	f64_vec2 move = h_use*p_v_overall_major[index];
 	f64 phidot = p_phidot[index];
 	f64 phi = p_phi[index];
 	f64_vec2 grad_phi = p_grad_phi_major[index];
 	
-	p_phi_out[index] = 
-		phi + move.dot(grad_phi) + h_use*phidot;
+	if ((info.flag == OUTERMOST) || (info.flag == INNERMOST))
+	{
+		if (info.flag == OUTERMOST) {
+			p_phi_out[index] = -V; // cathode has - => grad phi points out => E field points in => electrons flow out
+		} else {
+			p_phi_out[index] = V;
+		};
+	} else {
+		p_phi_out[index] = 
+			phi + move.dot(grad_phi) + h_use*phidot;
+	};
 
-	if (index == 25000) {
+	if (index == 36797) {
 		printf("phi %1.10E movedot %1.10E hphidot %1.10E \n",
 			phi,move.dot(grad_phi),h_use*phidot);
 	};	

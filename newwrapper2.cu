@@ -286,6 +286,8 @@ void PerformCUDA_Advance_2 (
 	f64_vec3 * p_MAR_ion_host, * p_MAR_neut_host, * p_MAR_elec_host;
 
 
+	printf("pXhost->p_Adot[20000 + BEGINNING_OF_CENTRAL].z %1.10E\n",pX_host->p_Adot[20000 + BEGINNING_OF_CENTRAL].z);
+
 	printf("sizeof(CHAR4): %d \n"
 		"sizeof(structural): %d \n"
 		"sizeof(LONG3): %d \n"
@@ -482,8 +484,7 @@ void PerformCUDA_Advance_2 (
 	p_MAR_neut_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
 	p_MAR_ion_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
 	p_MAR_elec_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
-
-
+	
 	// 2. cudaMemcpy system state from host: this happens always
 	// __________________________________________________________
 	
@@ -496,8 +497,12 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Syst1.p_area, pX_host->p_area, numVertices*sizeof(f64), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_area_minor, pX_host->p_area_minor, Syst1.Nminor*sizeof(f64), cudaMemcpyHostToDevice));
 		
-	Syst1.EzTuning = pX_host->EzTuning;
-	
+	Syst1.EzTuning = pX_host->EzTuning; // fail?
+		
+	printf("Syst1.Ez %1.9E pX_host Ez %1.9E \n",
+		Syst1.EzTuning,pX_host->EzTuning);
+	getch();
+
 	CallMAC(cudaMemcpy(Syst1.p_nT_neut_minor, pX_host->p_nT_neut_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_nT_ion_minor, pX_host->p_nT_ion_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_nT_elec_minor, pX_host->p_nT_elec_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
@@ -647,6 +652,29 @@ void PerformCUDA_Advance_2 (
 
 	// Kernel calling code:
 
+	// k1 ln 2.8 + k2 = -V
+	// k1 ln 4.6 + k2 = V
+	// 2V/(ln 4.6-ln 2.8) = k1
+	
+	f64 V = pX1->EzTuning*3.5; // 7cm assumed effective distance
+	// EzTuning is what goes into E since EzShape ~= 1 near tooth. Check ?
+	f64 k1 = 2.0*V/(log(4.6)-log(2.8));
+	f64 k2 = V - k1*log(4.6);
+	Kernel_InitialisePhi<<<numTilesMajor, threadsPerTileMajor>>>
+		(
+			pX1->p_info,
+			k1,k2,
+			pX1->p_phi
+		);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize InitialisePhi.");
+	f64 tempf64;
+	cudaMemcpy(&tempf64,pX1->p_phi+10000,sizeof(f64),cudaMemcpyDeviceToHost);
+	printf("pX1->p_phi[10000] %1.9E k1 %1.5E k2 %1.5E\n"
+		"==============================================\n",
+		tempf64,k1,k2);
+	// First thing is to see why this is zero, then see why #IND in Xhalf.
+	
+		
 	Kernel_CalculateTriMinorAreas_AndCentroids<<<numTriTiles, threadsPerTileMinor>>>		
 		(
 			pX1->p_info,
@@ -832,7 +860,8 @@ void PerformCUDA_Advance_2 (
 			pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL, 
 			pX1->p_nT_neut_minor, pX1->p_nT_ion_minor,	pX1->p_nT_elec_minor			
 			);
-		// What it does for centrals?
+		// If one of the corners is an outermost then outermost n should be pop'd with benign value.
+		// At insulator-crossing tri we require having set n = 0 inside insulator.
 		
 		Kernel_GetZCurrent<<<numTilesMinor,threadsPerTileMinor>>>(
 			pX1->p_tri_perinfo,
@@ -908,19 +937,8 @@ void PerformCUDA_Advance_2 (
 			pX1->pIndexNeigh, // neighbours of vertices
 			pX1->pPBCneigh, // rel periodic orientation of vertex neighbours
 			p_Lapphi
-			);
+			); // == 0 for INNERMOST & OUTERMOST
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Get_Lap_phi_on_major.");
-		
-		//::Kernel_Compute_grad_phi_Te_tris<<<numTriTiles,threadsPerTileMinor>>>(
-		//	pX1->p_info,
-		//	pX1->p_phidot, // NOTE BENE - did not add to.
-		//	pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-		//	pX1->p_tri_corner_index,
-		//	pX1->p_tri_perinfo,
-		//	pX1->p_grad_phidot // NOTE BENE
-		//	);		
-		// Why are we calling this? It is not used below.
-		// Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute_grad_phi_on_tris.");
 		
 		::Kernel_Compute_grad_phi_Te_centrals<<<numTilesMajor,threadsPerTileMajor>>>(
 			pX1->p_info,
@@ -929,8 +947,9 @@ void PerformCUDA_Advance_2 (
 			pX1->pIndexNeigh,
 			p_grad_phidot + BEGINNING_OF_CENTRAL,
 			pX1->p_GradTe +  BEGINNING_OF_CENTRAL
-			);
+			); 
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Compute_grad_phi_centrals.");
+		// sets == 0 outside of DOMAIN_VERTEX
 		
 		// Having created grad phi, we then want to use it to do the anti-move of phi_vertex.
 		Kernel_Advance_Antiadvect_phidot<<<numTilesMajor,threadsPerTileMajor>>>(
@@ -966,9 +985,15 @@ void PerformCUDA_Advance_2 (
 			pX1->p_GradTe + BEGINNING_OF_CENTRAL			
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Compute_grad_phi_centrals.");
-				
+		// sets == 0 outside of DOMAIN_VERTEX
+		
+		f64 Vhalf = pX1->EzTuning*3.5*(GetIzPrescribed(thalf)/GetIzPrescribed(t));
+		printf("EzTuning = %1.5E , V = %1.5E \n",pX1->EzTuning,Vhalf);	// guesstimate 
+
 		Kernel_Advance_Antiadvect_phi<<<numTilesMajor,threadsPerTileMajor>>>
 			(
+				pX1->p_info, // for innermost & outermost, set = +-V:,
+				Vhalf,
 				pX1->p_phi,
 				pX1->p_v_overall + BEGINNING_OF_CENTRAL, // SHOULD THIS NEED + numTris? Most obvious way is yes.
 				hstep*0.5,
@@ -977,7 +1002,14 @@ void PerformCUDA_Advance_2 (
 				pXhalf->p_phi
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Antiadvect_phi.");
-				
+		
+		::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
+			(
+				pX1->p_tri_perinfo,
+				pX1->p_A, // update own, read others
+				pX1->p_tri_centroid,
+				pX1->p_neigh_tri_index
+			);
 		// Note that if we are not sharing tri info for major tile, we can simply run with bigger blocks for major.
 		// Only if we concatenate several neighbouring "tiles" that we organised.
 		
@@ -1006,7 +1038,7 @@ void PerformCUDA_Advance_2 (
 			// output:
 			pXhalf->p_Adot// fill in for both tri and vert...			
 			);
-
+		
 		if (cudaPeekAtLastError() != cudaSuccess) {
 			printf("Kernel_Compute_Grad_A_minor_antiadvect %s\n",cudaGetErrorString(cudaGetLastError()));
 		} else {
@@ -1378,6 +1410,14 @@ void PerformCUDA_Advance_2 (
 		}
 		fclose(fp);
 
+		::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
+			(
+				pXhalf->p_tri_perinfo,
+				pXhalf->p_A, // update own, read others
+				pXhalf->p_tri_centroid,
+				pXhalf->p_neigh_tri_index
+			);
+
 		::Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor<<<numTriTiles, threadsPerTileMinor>>>
 			(
 				pXhalf->p_A,
@@ -1395,7 +1435,6 @@ void PerformCUDA_Advance_2 (
 				pXhalf->p_B + BEGINNING_OF_CENTRAL
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute Lap A I");
-
 
 		::Kernel_Compute_grad_phi_Te_tris<<<numTriTiles, threadsPerTileMinor>>>
 			(
@@ -1437,6 +1476,7 @@ void PerformCUDA_Advance_2 (
 			p_MAR_ion,
 			p_MAR_elec
 			);
+		// So far it only works on DOMAIN_TRIANGLE, CROSSING_INS gets 0.
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure tris");
 		
 		Kernel_GetThermalPressureCentrals<<<numTilesMajor,threadsPerTileMajor>>>
@@ -1449,7 +1489,7 @@ void PerformCUDA_Advance_2 (
 			p_MAR_neut + BEGINNING_OF_CENTRAL,
 			p_MAR_ion + BEGINNING_OF_CENTRAL,
 			p_MAR_elec + BEGINNING_OF_CENTRAL
-			);
+			); // works on DOMAIN_VERTEX only
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");
 		
 		// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1497,19 +1537,33 @@ void PerformCUDA_Advance_2 (
 			p_nn_ionrec_minor
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize splitout nn");
-
+		
 		// OKAY what we see is that nn_ionrec is needed in centrals and we want to set it to the
 		// major value.
 		// Therefore nn_ionrec logically is organised with major/central values at the end.
-
+		
 		// Now run midpoint v step on minor cells.
 		
 		printf("about to do midpoint.\n");
 		getch();
-
+		
 		// I think for debugging it would be good here to dump all the inputs to host
 		// and spit it out to a spreadsheet.
+		
+		f64 temp1, temp2;
+		nT nTtemp3, nTtemp4;
 
+		cudaMemcpy(&temp1,&(pX1->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
+		cudaMemcpy(&temp2,&(pXhalf->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
+		cudaMemcpy(&nTtemp3,&(pX1->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
+		cudaMemcpy(&nTtemp4,&(pXhalf->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
+		
+		printf("phi[10000] %1.9E %1.9E \nTe[89000] %1.5E %1.5E\n",
+			temp1,temp2,nTtemp3.T,nTtemp4.T);
+		getch();
+		
+		cudaMemcpy(pX_host->p_phi,		pX1->p_phi,
+			sizeof(f64)*Syst1.Nverts,			cudaMemcpyDeviceToHost);
 		cudaMemcpy(pX_host->p_nT_neut_minor,		pXhalf->p_nT_neut_minor,
 			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
 		cudaMemcpy(pX_host->p_nT_ion_minor,			pXhalf->p_nT_ion_minor,
@@ -1542,21 +1596,27 @@ void PerformCUDA_Advance_2 (
 			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
 		cudaMemcpy(pX_host->p_GradTe,			pXhalf->p_GradTe,
 			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+	//	cudaMemcpy(pX_host->p_, pX1->p_Adot, 
+	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
 
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
-
-		FILE * file = fopen("inputs.txt","w");
+		
+		FILE * file = fopen("inputs_.txt","w");
 		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
 			"Bx By Bz vnx vny vnz vix viy viz vex vey vez | "
-			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Adot_x Adot_y Adot_z | "
+			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
 			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
-			"GradTe_x GradTe_y \n");
-
+			"GradTe_x GradTe_y phi \n");
+		
 		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
 		{
+			f64 temp1;
+			cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
+			sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
+
 			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
 				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | "
 				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
 				" %1.14E %1.14E ",
 				iMinor, 
@@ -1575,7 +1635,8 @@ void PerformCUDA_Advance_2 (
 				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
 				
 				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
-				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,
+				pX_host->p_A[iMinor].z,
+				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1,
 				
 				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
 				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
@@ -1583,14 +1644,21 @@ void PerformCUDA_Advance_2 (
 				
 				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y
 				);
-			if (iMinor < BEGINNING_OF_CENTRAL) 
+			if (iMinor < BEGINNING_OF_CENTRAL) {
 				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
+			} else {
+				fprintf(file," %1.10E | %1.10E %1.10E ",
+					pX_host->p_phi[iMinor-BEGINNING_OF_CENTRAL],
+					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
+					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
+			};
 			fprintf(file,"\n");
 		};
 		fclose(file);
 		// v and gradphi come back as IND / viz,vez INF.
 
 		printf("inputs output done.\n");
+
 		getch();
 
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
@@ -2031,8 +2099,11 @@ void PerformCUDA_Advance_2 (
 		
 		// Note pXhalf->grad_phi is already populated.
 				
+		Vhalf = pXhalf->EzTuning*3.5;
 		Kernel_Advance_Antiadvect_phi<<<numTilesMajor,threadsPerTileMajor>>>
 			(
+				pXhalf->p_info,
+				Vhalf,
 				pXhalf->p_phi,
 				pXusable->p_v_overall + BEGINNING_OF_CENTRAL, // SHOULD THIS NEED + numTris? Most obvious way is yes.
 				hstep*0.5,

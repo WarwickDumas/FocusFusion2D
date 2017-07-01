@@ -1906,6 +1906,10 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 	
 	pSystdata->EzTuning = this->EzTuning.x[0];
 	
+	printf("pSystdata->EzTuning = %1.9E\n",pSystdata->EzTuning);
+	printf("this->EzTuning.x[0] = %1.9E\n",this->EzTuning.x[0]);
+	getch();
+
 	long izNeigh[128],izTri[128];
 	long i;
 	long iVertex;
@@ -1936,32 +1940,36 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		pSystdata->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].T = pVertex->Elec.heat/pVertex->Elec.mass;
 		pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL] = pVertex->Elec.mom/pVertex->Elec.mass;
 		
-		if (iVertex == 12500) {
-			printf("12500: vez %1.2E %1.2E \n",
-				pVertex->Elec.mom.z/pVertex->Elec.mass,
-				pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL].z
-				);
+		if (iVertex == 20000) {
+			printf("20000: flag %d phi %1.10E Adot.z %1.10E\n",
+				pVertex->flags,pVertex->phi,pVertex->Adot.z);
+				//pVertex->Elec.mom.z/pVertex->Elec.mass,
+				//pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL].z
 		};
-
+		
+		if (iVertex == 89000-BEGINNING_OF_CENTRAL) {
+			printf("%d: Te %1.10E \n",
+				89000-BEGINNING_OF_CENTRAL,
+				pVertex->Elec.heat/pVertex->Elec.mass);
+		};
 		// ===============================================================================================
-
+		
 		pSystdata->p_area[iVertex] = pVertex->AreaCell;
 		if (pVertex->AreaCell == 0.0) {
 			printf(" area=0 %d ",iVertex);
 		}
-		
-		
+				
 		IzAttained1 += q*(pVertex->Ion.mom.z-pVertex->Elec.mom.z);
 		IzAttained2 += 
 			q*(pSystdata->p_v_ion[iVertex + BEGINNING_OF_CENTRAL].z*pSystdata->p_nT_ion_minor[iVertex + BEGINNING_OF_CENTRAL].n*pVertex->AreaCell
 			- pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL].z*pSystdata->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].n*pVertex->AreaCell);
-
+		
 		long neigh_len = pVertex->GetNeighIndexArray(izNeigh);
 		pSystdata->p_info[iVertex].flag = (short)(pVertex->flags);
 		
 		// Is this correct?
 		// ################################################!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+		
 		pSystdata->p_info[iVertex].neigh_len = (short)neigh_len;
 		pSystdata->p_info[iVertex].pos = pVertex->pos;
 		
@@ -2024,7 +2032,8 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 	};
 	printf("IzAttained1 = %1.3E IzAttained2 = %1.4E\n",
 		IzAttained1, IzAttained2);
-	
+	getch();
+
 	//	Now fill in the tri data. ??? Average I guess.
 	//  Note that it's clear, the reverse process will lose the integrity of the Systdata object.
 	
@@ -2118,6 +2127,13 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		pSystdata->p_Adot[iTri] = THIRD*(Adot0+Adot1+Adot2);
 		pSystdata->p_B[iTri] = THIRD*(B0+B1+B2);
 		
+		if (pSystdata->p_Adot[iTri].x != 0.0) {
+			printf("###########################################################\n"
+				"iTri %d pSystdata->p_Adot[iTri].x %1.5E \n",
+				iTri,pSystdata->p_Adot[iTri].x);
+			getch();
+		}
+
 		pSystdata->p_v_neut[iTri] = THIRD*(vn0 + vn1 + vn2);
 		pSystdata->p_v_ion[iTri] = THIRD*(vi0 + vi1 + vi2);
 		pSystdata->p_v_elec[iTri] = THIRD*(ve0 + ve1 + ve2);
@@ -2263,6 +2279,8 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		// Of course, Systdata has a large burden of structural (duplicated) data members.
 				
 
+	printf("20000: flag %d phi %1.10E Adot.z %1.10E\n",
+		pSystdata->p_info[20000].flag,pSystdata->p_phi[20000],pSystdata->p_Adot[20000].z);
 
 	printf("Done transfer System object to Systdata object, on CPU.\n");
 }
