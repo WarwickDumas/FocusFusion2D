@@ -4172,12 +4172,13 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 			grad_Te_integrated += edge_normal*0.5*(Te1+Te2);
 			grad_x_integrated_x += edge_normal.x*0.5*(pos1.x+pos2.x);
 			
-			if (index == 11685) {
-				printf("11685: grad_phi_integrated %1.10E %1.10E\n"
-					"phi12 %1.6E %1.6E edgenormal %1.6E %1.6E\n "	,
-					grad_phi_integrated.x,grad_phi_integrated.y,
-					phi1,phi2,edge_normal.x,edge_normal.y);
-			}
+			//if (index == 11685) {
+			//	printf("11685: grad_phi_integrated %1.10E %1.10E\n"
+			//		"phi12 %1.6E %1.6E edgenormal %1.6E %1.6E\n "	,
+			//		grad_phi_integrated.x,grad_phi_integrated.y,
+			//		phi1,phi2,edge_normal.x,edge_normal.y);
+			//}
+
 			// This should now be fine since phi values defined in insulator.
 			phi1 = phi2;
 			pos1 = pos2;
@@ -4227,9 +4228,9 @@ __global__ void Kernel_GetThermalPressureCentrals(
 	
 	long index = blockDim.x*blockIdx.x + threadIdx.x;
 	
-	nT nT_temp = p_nT_neut[blockIdx.x*blockDim.x + threadIdx.x];
+	nT nT_temp = p_nT_neut[index];
 	p_nT_shared[threadIdx.x] = nT_temp.n*nT_temp.T;
-	structural info = p_info_sharing[threadIdx.x];
+	structural info = p_info_sharing[index];
 	p_vertex_pos_shared[threadIdx.x] = info.pos;
 	
 	__syncthreads();
@@ -4333,6 +4334,11 @@ __global__ void Kernel_GetThermalPressureCentrals(
 					 -grad_nT_integrated.y/(9.0*m_n),
 					 0.0);
 		p_MAR_neut[index] += add;
+
+		if (index == 20000) {
+			printf("\n\nGTPC 20000: %1.9E %1.9E \n",grad_nT_integrated.x,grad_nT_integrated.y);
+			printf("nT1 nT2: %1.9E %1.9E \n\n",nT1,nT2);
+		}
 		
 		// Note that we accumulated edge_normal*(phi0+phi1) so that it
 		// cancelled out between every edge being counted each way.
@@ -4687,17 +4693,17 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		p_grad_phi[index] = grad_phi;
 		p_GradTe[index] = GradTe;
 
-		if (index == 73400) {
-			printf("73400 Grad phi:\n"
-				"%d %d %d\n"
-				"phi012 %1.9E %1.9E %1.9E\n"
-				"pos0xy %1.9E %1.9E pos1 %1.9E %1.9E pos2  %1.9E %1.9E\n"
-				"area %1.9E \n----------------------------------\n",
-				corner_index.i1,corner_index.i2,corner_index.i3,
-				phi0,phi1,phi2,
-				pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y,
-				area);
-		}
+		//if (index == 73400) {
+		//	printf("73400 Grad phi:\n"
+		//		"%d %d %d\n"
+		//		"phi012 %1.9E %1.9E %1.9E\n"
+		//		"pos0xy %1.9E %1.9E pos1 %1.9E %1.9E pos2  %1.9E %1.9E\n"
+		//		"area %1.9E \n----------------------------------\n",
+		//		corner_index.i1,corner_index.i2,corner_index.i3,
+		//		phi0,phi1,phi2,
+		//		pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y,
+		//		area);
+		//}
 	} else {
 		f64_vec2 zero(0.0,0.0);
 		p_grad_phi[index] = zero;
@@ -4842,13 +4848,36 @@ __global__ void Get_Lap_phi_on_major(
 			// HERE DID NOT HAVE TO USE tri_centroid AFTER ALL.
 			// HOWEVER MAKE SURE WE DO THE RIGHT THING IN CASE THIS ABUTS THE INSULATOR.
 			// In this case, tri centroid is meant to be projected to insulator!! 
+			// ^^ !!
+			// But is it important how Lap phi is calculated, if we extend it right through the domain?
+			// Not sure.
 
-			// But Lap phi abutting the insulator should come out as what? 
 
-			// Sides contribute azimuthally, ins side contributes 0.
-			// ie we should not be using Inner values to get gradient when looking left + right
-			// at ins.
+			Lapphi += ( (phi - phi_out) * ( (pos_anti.y-pos_clock.y)*edgenormal.x
+										  + (pos_clock.x-pos_anti.x)*edgenormal.y )  
+					+	(phi_anti-phi_clock)*( (pos_out.y - info.pos.y)*edgenormal.x
+										  + (info.pos.x - pos_out.x)*edgenormal.y) )
 
+				/ ( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
+				  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) );
+
+
+		//	if (index == 10000) {
+		//		printf("10000: Lapphi %1.10E area %1.9E \nphi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",
+		//			Lapphi,Area,
+		//			phi_clock, phi_out,phi_anti, phi);
+		//		printf("shoelace: %1.10E \n",
+		//			( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
+		//			  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) ));
+		//		printf("infopos %1.10E %1.10E \npos_out %1.10E %1.10E \npos_clk %1.10E %1.10E \npos_ant %1.10E %1.10E \n",
+		//			 info.pos.x,info.pos.y,pos_out.x,pos_out.y,
+		//			 pos_clock.x,pos_clock.y,pos_anti.x,pos_anti.y);
+		//	};
+			
+			Area += 0.5*(pos_clock.x + pos_anti.x)*edgenormal.x;
+
+
+/*
 			if (pos_out.x*pos_out.x+pos_out.y*pos_out.y < DEVICE_INSULATOR_OUTER_RADIUS*DEVICE_INSULATOR_OUTER_RADIUS)
 			{
 				// Zero contribution, looking into insulator
@@ -4909,37 +4938,40 @@ __global__ void Get_Lap_phi_on_major(
 						Area += 0.5*(pos_clock.x + pos_anti.x)*edgenormal.x;
 						
 					} else {
-					// Default case.	
+						// Default case.	
 
 						//shoelace =  (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
 						//	      + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y);
 						// same coeff to phi for grad_x integrated as on x_0 in shoelace:
 						// same coeff to phi_anti for grad_y as on y_anti in shoelace:
 
+
 						Lapphi += ( (phi - phi_out) * ( (pos_anti.y-pos_clock.y)*edgenormal.x
 													  + (pos_clock.x-pos_anti.x)*edgenormal.y )  
 								+	(phi_anti-phi_clock)*( (pos_out.y - info.pos.y)*edgenormal.x
 													  + (info.pos.x - pos_out.x)*edgenormal.y) )
+
 							/ ( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
 							  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) );
 
-					//	if (index == 25000) {
-					//	printf("25000: Lapphi %1.10E area %1.9E \nphi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",
-					//		Lapphi,Area,
-					//		phi_clock, phi_out,phi_anti, phi);
-					//	printf("shoelace: %1.10E \n",
-					//		( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
-					//		  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) ));
-					//	printf("infopos %1.10E %1.10E \npos_out %1.10E %1.10E \npos_clk %1.10E %1.10E \npos_ant %1.10E %1.10E \n",
-					//		 info.pos.x,info.pos.y,pos_out.x,pos_out.y,
-					//		 pos_clock.x,pos_clock.y,pos_anti.x,pos_anti.y);
-					//	};
-						// Think divide by zero is the reason it crashes. Nope. Still fails without division.
+
+						if (index == 10000) {
+							printf("10000: Lapphi %1.10E area %1.9E \nphi_clockoutanti %1.9E %1.9E %1.9E %1.9E\n",
+								Lapphi,Area,
+								phi_clock, phi_out,phi_anti, phi);
+							printf("shoelace: %1.10E \n",
+								( (info.pos.x - pos_out.x)*(pos_anti.y - pos_clock.y)
+								  + (pos_anti.x - pos_clock.x)*(pos_out.y - info.pos.y) ));
+							printf("infopos %1.10E %1.10E \npos_out %1.10E %1.10E \npos_clk %1.10E %1.10E \npos_ant %1.10E %1.10E \n",
+								 info.pos.x,info.pos.y,pos_out.x,pos_out.y,
+								 pos_clock.x,pos_clock.y,pos_anti.x,pos_anti.y);
+						};
+						
 
 						Area += 0.5*(pos_clock.x + pos_anti.x)*edgenormal.x;
 					};
 				};
-			};
+			};*/
 			// Get away with not repositioning edge_normal ends to insulator...			
 			
 			// Now go round:		
@@ -5365,8 +5397,8 @@ __global__ void Kernel_Advance_Antiadvect_phidot(
 		phidot + move.dot(grad_phidot)
 			+ h_use*csq*(Lap_phi + FOURPI_Q*(nT_ion.n-nT_elec.n));
 	
-	if (index == 36797) {
-		printf("phidot %1.10E movedot %1.10E Lapphi %1.10E \n",
+	if (index == 10000) {
+		printf("phidot[10000] %1.10E movedot %1.10E Lapphi %1.10E \n",
 			phidot,move.dot(grad_phidot),Lap_phi);
 	};
 	// CHECK SIGNS
@@ -5409,8 +5441,8 @@ __global__ void Kernel_Advance_Antiadvect_phi
 			phi + move.dot(grad_phi) + h_use*phidot;
 	};
 
-	if (index == 36797) {
-		printf("phi %1.10E movedot %1.10E hphidot %1.10E \n",
+	if (index == 10000) {
+		printf("phi[10000] %1.10E movedot %1.10E hphidot %1.10E \n",
 			phi,move.dot(grad_phi),h_use*phidot);
 	};	
 }
@@ -5687,7 +5719,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 	f64_vec2 centroid;
 	if (index < BEGINNING_OF_CENTRAL)
 	{
-		centroid = p_tri_centroid[index];
+		centroid = p_tri_centroid[index]; // position - only used for shaping Ez I think
 	} else {
 		centroid = p_info[index-BEGINNING_OF_CENTRAL].pos;
 	};
@@ -5704,22 +5736,25 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 		printf("Bxy %1.5E %1.5E omega.z %1.5E \n",omega_ce.x/eovermc,omega_ce.y/eovermc,omega_ce.z);
 	};
 	
-	if ((per_info.flag == DOMAIN_TRIANGLE)) // try loading inside, outside
+	if ((per_info.flag == DOMAIN_TRIANGLE)) // try loading data inside, outside branch...
 	{
-		// Now the v calcs:
 		{
 			nT nT_elec_src, nT_ion_src, nT_neut_src; // register pressure?
 			
+			// data from time t_k:
 			nT_elec_src = p_nT_elec_src[index];
 			nT_ion_src = p_nT_ion_src[index];
 			nT_neut_src = p_nT_neut_src[index];
 			// Question whether these should be inside brace.
 
+			// n_n_plus means neutral density at t_k+1
 			n_n_plus = nT_neut_src.n + n_ionrec.n_recombine-n_ionrec.n_ionise;
 			n_ion_plus = nT_ion_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
 			n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
 	
 			if (b2ndPass) {
+				// On the 2nd+3rd pass,
+				// we prefer to have n,T at t_k+1/2 for use in time-derivatives:
 				nT_elec_use = p_nT_elec_use[index];
 				nT_ion_use = p_nT_ion_use[index];
 				nT_neut_use = p_nT_neut_use[index];
@@ -5729,8 +5764,8 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				nT_neut_use = nT_neut_src;
 			};
 	
-			// Try to make do with 3 tensors: 27 doubles.
 			{
+				// Dimensioning inside a brace allows the following vars to go out of scope at the end of the brace.
 				f64 sqrt_Te,ionneut_thermal, electron_thermal,
 						lnLambda, s_in_MT, s_en_MT, s_en_visc;
 					
@@ -5747,11 +5782,8 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				nu_ni_MT_over_n = s_in_MT*ionneut_thermal;
 				nu_eiBar = nu_eiBarconst*kB_to_3halves*nT_ion_use.n*lnLambda/(nT_elec_use.T*sqrt_Te);
 				nu_ieBar = nT_elec_use.n*nu_eiBar/nT_ion_use.n;
-				nu_eHeart = 1.87*nu_eiBar + 
-						//nu_en_visc; // Why used visc??
-									nT_neut_use.n*s_en_visc*electron_thermal;
+				nu_eHeart = 1.87*nu_eiBar + nT_neut_use.n*s_en_visc*electron_thermal;
 			}								
-			// Can avoid 6 doubles on 1st pass if we put these defined above and do not use nT_use from here.
 			
 			f64 Beta_ni, Beta_ne;
 			
@@ -5764,6 +5796,10 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 					+ n_ionrec.n_recombine*(m_i_over_m_n*v_ion_k+m_e_over_m_n*v_e_k))/n_n_plus;
 						- Beta_ne*(v_n_k-v_e_k)
 						- Beta_ni*(v_n_k-v_ion_k);
+
+			if ((OUTPUT) && (index == REPORT)) printf("vn0 %1.8E .. %1.8E\n",v_n_0.x,				
+					n_ionrec.n_recombine*(m_i_over_m_n*v_ion_k.x + m_e_over_m_n*v_e_k.x)/n_n_plus);
+			// == 0
 			{
 				//Vector2 grad_nT_neut = p_grad_nT_neut[index];
 				Vector3 MomAdditionRate = p_MomAdditionRate_neut[index];
@@ -5779,7 +5815,18 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				v_n_0 *= over;
 				Beta_ni *= over;
 				Beta_ne *= over;
-			} 			
+								
+				if ((OUTPUT) && (index == REPORT)) printf(
+					"Beta_ni %1.8E Beta_ne %1.8E n_ionise %1.6E n_recomb %1.6E \n"
+					"n_n_plus %1.8E MAR %1.8E %1.8E \n"
+					"area %1.8E  \n",
+					Beta_ni, Beta_ne, n_ionrec.n_ionise, n_ionrec.n_recombine, n_n_plus,
+					MomAdditionRate.x,MomAdditionRate.y,
+					area);
+				
+				if ((OUTPUT) && (index == REPORT)) printf("vn0 %1.8E \n",v_n_0.x);
+			} 		
+			
 			// Now get v_i (v_e):
 			f64 total = 
 				(nu_eHeart*nu_eHeart + omega_ce.x*omega_ce.x+omega_ce.y*omega_ce.y+omega_ce.z*omega_ce.z);
@@ -5789,20 +5836,28 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 			{
 				Vector2 grad_phi, GradTe;
 				Vector3 MomAdditionRate; // We could use it first as this, union with dAdt_k
+				
+				// Load in more input data:
 				grad_phi = p_grad_phi_half[index];
 				Lap_A_half = p_Lap_A_half[index];
 				dAdt_k = p_Adot_k[index];
 				MomAdditionRate = p_MomAdditionRate_ion[index];
-				
-				// TRY putting this stuff outside the branch to see what happens.
+				// (TRY putting the loads outside the branch to see what happens.)
 				// ***************************************************************
 				
-				EzShape = GetEzShape(centroid.modulus());
-				// Set up most of vec_e, vec_i here:
+				EzShape = GetEzShape(centroid.modulus()); // It goes to 0 at the outer radius.
 				
+				// Set up most of vec_e, vec_i here; this vec_i may be "d" in the documents.
 				vec_i =     // Ionisation affected v_i_k:
-					((nT_ion_src.n-n_ionrec.n_recombine)*v_ion_k + n_ionrec.n_ionise*v_n_k)/n_ion_plus
-					- h*0.5*moverM*omega_ce.cross(v_ion_k);
+					((nT_ion_src.n-n_ionrec.n_recombine)*v_ion_k + n_ionrec.n_ionise*v_n_k)/n_ion_plus;
+					
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+					
+				vec_i -= h*0.5*moverM*omega_ce.cross(v_ion_k);		
+
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+					
+				// OK UP TO HERE.
 				
 				vec_i +=
 					  h*qoverM*( //- grad_phi [[below]]
@@ -5811,6 +5866,24 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 					// nu_ni/n * n_n = nu_in
 					- h*0.5*(m_n/(m_ion+m_n))*nu_ni_MT_over_n*nT_neut_use.n*(v_ion_k-v_n_k-v_n_0)
 					- h*0.5*moverM*nu_ieBar*(v_ion_k-v_e_k);
+				
+				// THIS BIT GAVE RUBBISH.
+
+				if ((OUTPUT) && (index == REPORT)) printf("dAdt_kz/c  %1.5E  hc0.5 Lap_Az_half %1.5E \n"
+					"n_ion vx_ion_k - n_e vx_e_k %1.6E \n"
+					" n-i term x %1.6E\n"
+					" nu_ieBar term x %1.6E \n",
+dAdt_k.z/c,
+h*c*0.5*Lap_A_half.z, nT_ion_src.n*v_ion_k.x - nT_elec_src.n*v_e_k.x, h*0.5*(m_n/(m_ion+m_n))*nu_ni_MT_over_n*nT_neut_use.n*(v_ion_k.x-v_n_k.x-v_n_0.x),
+h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
+
+				if ((OUTPUT) && (index == REPORT)) printf("nu_ni_MT_over_n %1.6E nT_neut_use.n %1.6E v_n_k.x %1.6E v_n_0.x %1.6E \n",
+					nu_ni_MT_over_n,nT_neut_use.n,v_n_k.x,
+					v_n_0.x // the culprit
+					);
+
+
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
 				
 				vec_i.x -= h*qoverM*grad_phi.x;
 				vec_i.y -= h*qoverM*grad_phi.y;
@@ -5827,11 +5900,13 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				
 				if ((OUTPUT) && (index == REPORT))	printf("vec_i w/press %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
 				
-				MomAdditionRate = p_MomAdditionRate_elec[index];
 				
 				// We almost certainly should take v += (ViscMomAddition/n_k+1)
 				// The same applies to grad_nT_ion : integrate this over [t_k,t_k+1]
 				// and we get the addition to momentum.
+				
+				// Load data for electron:
+				MomAdditionRate = p_MomAdditionRate_elec[index];
 				GradTe = p_grad_Te[index];
 				
 				// Add thermal force on ions:				
@@ -6127,7 +6202,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 						Tens1.yx,Tens1.yy,Tens1.yz,
 						Tens1.zx,Tens1.zy,Tens1.zz);
 		
-			Tens1 -= Tens2;
+			Tens1 -= Tens2; // Tens1 = V - F G^-1 U
 		
 			if ((OUTPUT) && (index == REPORT))
 				printf("V-FG^-1U \n %1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n\n",
@@ -6140,7 +6215,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 			// -- insert the 
 			
 			Tens1.Inverse(Tens2);
-			v_e_plus = Tens2*vec_e;		
+			v_e_plus = Tens2*vec_e;		// Here is v_e_k+1
 			
 			// DEBUG:
 		//	f64_vec3 vec_e0 = vec_e;
@@ -6162,7 +6237,9 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 			};
 						
 			// Effect of EzTuning:
-			// We have to record a couple of extra values here:
+
+			// Now we come to part of the routine where we have to record the effects of scaling the external Ez field.
+			// We want to record an aggregated total: Sum of z current = Iz0 + sigma_zz EzTuning.
 			{
 				{ 
 					Vector3 ve_plus_of_EzTuning = Tens2*vec_e_effect_of_EzTuning;
@@ -6176,8 +6253,8 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 					}
 					sigma_zz[threadIdx.x] = q*area*(viz_plus_of_EzTuning*n_ion_plus - ve_plus_of_EzTuning.z*n_e_plus);
 				}
-				// Some changes resulted in lower stack frame, higher loads+stores. 
-				// We should realise that way outside L1, this is a worsening. NVM.
+				// Performance: Some changes resulted in lower stack frame, higher loads+stores. 
+				//              We should realise that way outside L1, this is a worsening. NVM.
 
 				// Can we preserve U = Tens3?
 				// Now recreate G which we overwrote:
@@ -6215,15 +6292,14 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				// We will prefer not to create omega_ci vector of course!!!
 				
 				Tens1.Inverse(Tens2); // Tens2 now = G^-1
-				v_ion_plus = Tens2*(vec_i - Tens3*v_e_plus);
-				
-				
+				v_ion_plus = Tens2*(vec_i - Tens3*v_e_plus);  // Here is v_i_k+1
 				
 				Iz[threadIdx.x] = q*area*(v_ion_plus.z*n_ion_plus - v_e_plus.z*n_e_plus);
 				
 				if //((OUTPUT) && (index == REPORT)) {
-					(//(Iz[threadIdx.x] > 1.0e6) || 
-				   (Iz[threadIdx.x] != Iz[threadIdx.x]) && (index < BEGINNING_OF_CENTRAL)){
+					//(Iz[threadIdx.x] > 1.0e6) || 
+					((0) && (Iz[threadIdx.x] != Iz[threadIdx.x])) 
+				{ // && (index < BEGINNING_OF_CENTRAL)){
 					printf("%d Iz %1.5E sig %1.4E ne %1.4E vez %1.4E\n",
 							index,
 							//q*area*(v_ion_plus.z*n_ion_plus - v_e_0.z*n_e_plus),
@@ -6234,7 +6310,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				
 			} // ve_plus_of_EzTuning goes out of scope
 			
-			v_n_plus = v_n_0 + Beta_ne*v_e_plus + Beta_ni*v_ion_plus;
+			v_n_plus = v_n_0 + Beta_ne*v_e_plus + Beta_ni*v_ion_plus;  // Here is v_n_k+1
 			
 			// v_e =  (V-F G^-1 U) ^-1 ( vec_e_0 )
 			//		+ EzTuning (V-F G^-1 U) ^-1 ( vec_e_1 )
@@ -6256,6 +6332,14 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 			// We really should try putting writes outside braces.
 		}
 		
+
+
+
+		// Jeffrey do not worry yet about anything after this point.
+
+
+
+
 		if (b2ndPass == 0) {
 			// WE NO LONGER WANT TO DO THIS: No save-off of n,T on minor cells.
 
@@ -6282,7 +6366,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 		p_v_elec_out[index] = v_e_plus;
 		// On 1st pass we use this v to calculate viscosity.
 		
-		// Time to sort out heating contribution:
+		// Time to sort out heating contribution: (ie frictional or "resistive" heating)
 
 		f64 NnTn_addition, NiTi_addition, NeTe_addition;
 
@@ -6359,7 +6443,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 		p_resistive_heat_ion[index] = NiTi_addition;
 		p_resistive_heat_elec[index] = NeTe_addition;
 
-	} else {  // (info.flag == DOMAIN_VERTEX) ...
+	} else {  // NOT (info.flag == DOMAIN_VERTEX) ...
 
 		p_resistive_heat_neut[index] = 0.0;
 		p_resistive_heat_ion[index] = 0.0;
@@ -6379,7 +6463,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 	//	Lap_A_half = p_Lap_A_half[index];
 		dAdt_k = p_Adot_k[index];
 		
-		// ReverseJ calc:
+		// ReverseJ calc: this is for the reverse z current at the edge of the anode:
 		
 		four_pi_over_c_J.x = 0.0;
 		four_pi_over_c_J.y = 0.0;
@@ -6479,7 +6563,7 @@ __global__ void Kernel_Heating_routine(
 					= p_resistive_heat_neut[SIZE_OF_TRI_TILE_FOR_MAJOR*blockIdx.x + threadIdx.x];
 	resistive_neut[threadIdx.x + threadsPerTileMajor] 
 					= p_resistive_heat_neut[SIZE_OF_TRI_TILE_FOR_MAJOR*blockIdx.x + threadsPerTileMajor + threadIdx.x];
-
+	
 	resistive_ion[threadIdx.x]
 					= p_resistive_heat_ion[SIZE_OF_TRI_TILE_FOR_MAJOR*blockIdx.x + threadIdx.x];
 	resistive_ion[threadIdx.x + threadsPerTileMajor] 
@@ -6496,6 +6580,7 @@ __global__ void Kernel_Heating_routine(
 	nT  nT_ion_src, nT_elec_src, nT_neut_src,
 		nT_neut_use, nT_ion_use, nT_elec_use;
 	f64 n_e_plus, n_ion_plus, n_n_plus, area;
+	
 	long index = blockIdx.x*blockDim.x + threadIdx.x;
 	long StartTri = SIZE_OF_TRI_TILE_FOR_MAJOR*blockIdx.x;
 	
@@ -6504,18 +6589,18 @@ __global__ void Kernel_Heating_routine(
 	
 	// Do we also want to gather v ? No, we can use from centrals.
 	// Remember to collect resistive heat from centrals as well.
-		
-	nn n_ionrec = p_nn_ionrec[index];
+	
+	
+	// n_ionrec is defined on all minors but we use the central==vertex
+	// value to actually evolve n --- that is what I assume here.
+	
+	area = p_area_cell[index];
 	structural info = p_info[index];
+
 	nT_neut_src = p_nT_neut_src[index];
 	nT_ion_src = p_nT_ion_src[index];
 	nT_elec_src = p_nT_elec_src[index];	
-	area = p_area_cell[index];
-
-	n_n_plus = nT_neut_src.n + n_ionrec.n_recombine-n_ionrec.n_ionise;
-	n_ion_plus = nT_ion_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
-	n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
-	
+		
 	if (b2ndPass) {
 		nT_neut_use = p_nT_neut_out[index];
 		nT_ion_use = p_nT_ion_out[index];
@@ -6524,8 +6609,15 @@ __global__ void Kernel_Heating_routine(
 		nT_neut_use = nT_neut_src;
 		nT_ion_use = nT_ion_src;
 		nT_elec_use = nT_elec_src;
-	}
+	}	
 	
+
+	nn n_ionrec = p_nn_ionrec[index];  
+	n_n_plus = nT_neut_src.n + n_ionrec.n_recombine-n_ionrec.n_ionise;
+	n_ion_plus = nT_ion_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
+	n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
+
+
 	niTi = (nT_ion_src.n-n_ionrec.n_recombine)*nT_ion_src.T 
 		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T;
 	
@@ -6537,6 +6629,9 @@ __global__ void Kernel_Heating_routine(
 		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T
 		  - n_ionrec.n_ionise*TWOTHIRDS*13.6*kB;	
 	
+	// WORKED WITH COMMENT HERE
+
+
 	if ((OUTPUT) && (index == REPORT)){
 			printf(
 				"Tsrc  %1.5E %1.5E %1.5E \n"
@@ -6578,7 +6673,7 @@ __global__ void Kernel_Heating_routine(
 		for (iTri = 0; iTri < info.neigh_len; iTri++)
 		{
 			// CAREFUL of cases where we are at the edge.
-			long index_tri = indextri[threadIdx.x];
+			long index_tri = indextri[threadIdx.x*MAXNEIGH_d + iTri];
 			if ((index_tri >= StartTri) && (index_tri < StartTri + SIZE_OF_TRI_TILE_FOR_MAJOR))
 			{
 				neut_resistive += resistive_neut[index_tri-StartTri];
@@ -6627,7 +6722,6 @@ __global__ void Kernel_Heating_routine(
 	}
 	
 	// From here on doing the inter-species heat exchange:
-
 	Tensor3 Tens1; 	
 	{
 		f64 M_in = m_n*m_ion/((m_n+m_ion)*(m_n+m_ion));

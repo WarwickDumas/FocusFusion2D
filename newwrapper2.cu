@@ -77,7 +77,7 @@
 
 #include "flags.h"
 
-#define OUTPUT 0
+#define OUTPUT 1
 
 // Note that this file has to first be compiled with nvcc
 // Then with -dlink, apply nvcc to the obj file to produce another obj file;
@@ -94,7 +94,7 @@
 #define SIXTH 0.166666666666667
 #define TWELTH 0.083333333333333
 #define FIVETWELTHS 0.416666666666667
-#define REPORT 13202
+#define REPORT 69500
 #define DEVICE_INSULATOR_OUTER_RADIUS 3.44
 
 #include "cuda_struct.h"
@@ -1492,6 +1492,9 @@ void PerformCUDA_Advance_2 (
 			); // works on DOMAIN_VERTEX only
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");
 		
+		printf("done GTPC\n");
+		
+		
 		// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 		// It might be reasonable to instead be using TRIANGLE nT in getting
 		// thermal pressure on centrals? You'd think so.
@@ -1601,9 +1604,19 @@ void PerformCUDA_Advance_2 (
 
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
 		
-		FILE * file = fopen("inputs_.txt","w");
+		FILE * file;
+		/*
+		file = fopen("inputs_2.txt","w");
+		if (file == 0) {
+			printf("could not open inputs_2.txt");
+			while (1) getch();
+		} else {
+			printf("inputs_2.txt opened");
+			getch();
+		};
+
 		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
-			"Bx By Bz vnx vny vnz vix viy viz vex vey vez | "
+			"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
 			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
 			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
 			"GradTe_x GradTe_y phi \n");
@@ -1614,36 +1627,36 @@ void PerformCUDA_Advance_2 (
 			cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
 			sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
 
+			printf("%d ",iMinor);
+
 			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | "
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
-				" %1.14E %1.14E ",
+				" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
 				iMinor, 
-				
 				pX_host->p_nT_neut_minor[iMinor].n,pX_host->p_nT_neut_minor[iMinor].T,
 				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
 				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
 				p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
-				
 				pX_host->p_B[iMinor].x,pX_host->p_B[iMinor].y,pX_host->p_B[iMinor].z,
-
 				pX_host->p_v_neut[iMinor].x,pX_host->p_v_neut[iMinor].y,pX_host->p_v_neut[iMinor].z,
 				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
-				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z,
+				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z
+				);
 				
+			fprintf(file,	
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
 				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
-				
 				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
 				pX_host->p_A[iMinor].z,
-				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1,
-				
+				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1);
+
+			fprintf(file,	
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
+				" %1.14E %1.14E ",
 				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
 				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
 				p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z,
-				
-				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y
-				);
+				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y);
+
 			if (iMinor < BEGINNING_OF_CENTRAL) {
 				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
 			} else {
@@ -1659,8 +1672,10 @@ void PerformCUDA_Advance_2 (
 
 		printf("inputs output done.\n");
 
-		getch();
-
+		getch();*/
+		
+		printf("start midpt step:\n");
+		
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 			(
 				hstep,
@@ -1688,7 +1703,7 @@ void PerformCUDA_Advance_2 (
 				// We want to leave v_k[advected] intact, so no update here.
 				// We want to go again from v_k on 2nd and 3rd pass.
 					
-				pXhalf->p_area,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
+				pXhalf->p_area_minor,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
 								// THIS MATTERS !!
 								// I think area_1/2 is relevant both times in midpt but need to check that.
 				pXhalf->p_grad_phi,
@@ -1714,10 +1729,15 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize MidptAccel 1");
 		
+		printf("midpt 1 done.");
+		getch();
+
 		// The amount of resistive heating depends on Ez of course...
 		// but we don't want to have to run twice at this juncture.
 		// Therefore?		
 		
+		// . The heating routine also cements the effects of ionisation on n.
+		// . Assume central ionisation == vertcell ionisation.
 		Kernel_Heating_routine<<<numTilesMajor,threadsPerTileMajor>>>(
 			hstep,
 			pXhalf->p_info,
@@ -1726,7 +1746,7 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_nT_neut_minor + BEGINNING_OF_CENTRAL, 
 			pXhalf->p_nT_ion_minor + BEGINNING_OF_CENTRAL,  
 			pXhalf->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-			p_nn_ionrec_minor,
+			p_nn_ionrec_minor + BEGINNING_OF_CENTRAL,
 			
 			pXhalf->p_B + BEGINNING_OF_CENTRAL,
 			
@@ -1748,6 +1768,8 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Heating 1");
 		
+		printf("Heating 1 done\n");
+
 		// OKay let's think about visc htg and conductive htg.
 		// Conduction has to be done on major cells, using the B field etc from the minor cells.
 		// Whereas viscous heating? Each minor wall generates some heating. Look at the two 
@@ -1865,8 +1887,119 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize splitout nn");
 
-		// Establish Ohmic relationship:
+		cudaMemcpy(pX_host->p_phi,		pXhalf->p_phi,
+			sizeof(f64)*Syst1.Nverts,			cudaMemcpyDeviceToHost);
+
+		cudaMemcpy(pX_host->p_nT_neut_minor,		pXusable->p_nT_neut_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_nT_ion_minor,			pXusable->p_nT_ion_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_nT_elec_minor,		pXusable->p_nT_elec_minor,
+			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_nn_host,						p_nn_ionrec_minor,
+			sizeof(nn)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_tri_centroid,		pXhalf->p_tri_centroid,
+			sizeof(f64_vec2)*Syst1.Ntris,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_B,				pXhalf->p_B,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_neut,			pXusable->p_v_neut,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_ion,			pXusable->p_v_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_v_elec,			pXusable->p_v_elec,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_grad_phi,			pXhalf->p_grad_phi,
+			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_Lap_A,			pXhalf->p_Lap_A,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_Adot,				pXhalf->p_Adot,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_neut_host,				p_MAR_neut,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(p_MAR_elec_host,				p_MAR_elec,
+			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+		cudaMemcpy(pX_host->p_GradTe,			pXusable->p_GradTe,
+			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+	//	cudaMemcpy(pX_host->p_, pX1->p_Adot, 
+	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
 		
+		file = fopen("inputs_3.txt","w");
+		if (file == 0) {
+			printf("could not open inputs_3.txt");
+			while (1) getch();
+		} else {
+			printf("inputs_3.txt opened");
+			getch();
+		};
+
+		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
+			"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
+			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
+			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
+			"GradTe_x GradTe_y phi \n");
+		
+		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
+		{
+			f64 temp1;
+			cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
+			sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
+
+			printf("%d ",iMinor);
+
+			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
+				" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
+				iMinor, 
+				pX_host->p_nT_neut_minor[iMinor].n,pX_host->p_nT_neut_minor[iMinor].T,
+				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
+				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
+				p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
+				pX_host->p_B[iMinor].x,pX_host->p_B[iMinor].y,pX_host->p_B[iMinor].z,
+				pX_host->p_v_neut[iMinor].x,pX_host->p_v_neut[iMinor].y,pX_host->p_v_neut[iMinor].z,
+				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
+				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z
+				);
+				
+			fprintf(file,	
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
+				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
+				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
+				pX_host->p_A[iMinor].z,
+				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1);
+
+			fprintf(file,	
+				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
+				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
+				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
+				p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z);
+
+			fprintf(file,		" %1.14E %1.14E ",
+				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y);
+
+			if (iMinor < BEGINNING_OF_CENTRAL) {
+				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
+			} else {
+				fprintf(file," %1.10E | %1.10E %1.10E ",
+					pX_host->p_phi[iMinor-BEGINNING_OF_CENTRAL],
+					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
+					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
+			};
+			fprintf(file,"\n");
+		};
+		fclose(file);
+		// v and gradphi come back as IND / viz,vez INF.
+
+		printf("inputs output done.\n");
+
+		getch();
+		// Establish Ohmic relationship:
+		printf("ready to do midpt again\n");
+		getch();
+
+
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 		(
 			hstep,
@@ -1893,7 +2026,7 @@ void PerformCUDA_Advance_2 (
 				// We want to leave v_k[advected] intact, so no update here.
 				// We want to go again from v_k on 2nd and 3rd pass.
 					
-			pXhalf->p_area,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
+			pXhalf->p_area_minor,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
 								// THIS MATTERS !!
 								// I think area_1/2 is relevant both times in midpt but need to check that.
 			pXhalf->p_grad_phi,
@@ -1902,7 +2035,8 @@ void PerformCUDA_Advance_2 (
 			p_MAR_neut,
 			p_MAR_ion,
 			p_MAR_elec, // assume take integral(-grad(nT))/m_s
-			pXhalf->p_GradTe,
+			pXusable->p_GradTe,
+
 			// output: not used, of course
 			pXusable->p_v_neut,
 			pXusable->p_v_ion,
@@ -1934,6 +2068,13 @@ void PerformCUDA_Advance_2 (
 		// Set pXhalf->EzTuning:
 		pXhalf->EzTuning = pX1->EzTuning + (Iz_prescribed-Iz0)/IzPerEzTuning;
 		
+		printf("pX1->EzTuning %1.8E Iz_prescribed %1.8E \n"
+			"Iz0 %1.8E IzPerEzTuning %1.8E \n"
+			"pXhalf->EzTuning %1.8E \n",
+			pX1->EzTuning,Iz_prescribed, Iz0, IzPerEzTuning,
+			pXhalf->EzTuning);
+		getch();
+
 		// Call with same parameters over again:
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 		(
@@ -1953,12 +2094,13 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_v_neut, // src
 			pXhalf->p_v_ion,
 			pXhalf->p_v_elec,
-			pXhalf->p_area,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
+			pXhalf->p_area_minor,	// It's assumed to be area_k+1 but I guess it's area_k+1/2 ... too bad?
 			pXhalf->p_grad_phi,
 			pXhalf->p_Lap_A, 
 			pXhalf->p_Adot,  
 			p_MAR_neut, p_MAR_ion, p_MAR_elec,
-			pXhalf->p_GradTe,
+			pXusable->p_GradTe,
+
 			// output: 
 			pXusable->p_v_neut,
 			pXusable->p_v_ion,
@@ -1982,7 +2124,7 @@ void PerformCUDA_Advance_2 (
 		};
 		printf("Iz attained %1.8E Presc %1.8E Diff %1.4E\n",
 			Iz0,Iz_prescribed,Iz0-Iz_prescribed);
-		
+		getch();
 		// Can double-check here that Iz is being achieved:
 		
 		Kernel_Heating_routine<<<numTilesMajor,threadsPerTileMajor>>>(
@@ -1993,7 +2135,7 @@ void PerformCUDA_Advance_2 (
 			pXhalf->p_nT_neut_minor + BEGINNING_OF_CENTRAL, 
 			pXhalf->p_nT_ion_minor + BEGINNING_OF_CENTRAL,  
 			pXhalf->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-			p_nn_ionrec_minor,
+			p_nn_ionrec_minor + BEGINNING_OF_CENTRAL,
 			// On 2nd pass, let us use the output as the "used" nT, and update it.
 			
 			pXhalf->p_B + BEGINNING_OF_CENTRAL,
@@ -2015,7 +2157,11 @@ void PerformCUDA_Advance_2 (
 			true // 2nd pass
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Heating 2");
+		printf("heating done\n");
 		
+		while(1) getch();
+
+
 		// We now created pXusable -> n,v,T and Adot. pXhalf->EzTuning.
 		
 		// Now the rest of the move.
