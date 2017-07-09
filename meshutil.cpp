@@ -734,15 +734,21 @@ int TriMesh::Initialise(int token)
 	// then add more rows to get us near to the insulator; stop at 1/2 distance from it;
 	// then add the domain vertices, again starting from 1/2 a row above the insulator.
 	
-	numRow1 = (int)((REVERSE_ZCURRENT_RADIUS-INNER_A_BOUNDARY)/r_spacing); // too few - squeeze out
-	if ((REVERSE_ZCURRENT_RADIUS-INNER_A_BOUNDARY)/r_spacing -(real)numRow1 > 0.5) numRow1++; // squeeze in instead
-	r_use1 = (REVERSE_ZCURRENT_RADIUS-INNER_A_BOUNDARY)/(real)numRow1;
+	// 06/07/2017:
+	// For offset velocities, we really want z current to be halfway between two rows of vertices.
+	// 
+	
+	f64 rAim = REVERSE_ZCURRENT_RADIUS-r_spacing*0.5;
+
+	numRow1 = (int)((rAim-INNER_A_BOUNDARY)/r_spacing); // too few - squeeze out
+	if ((rAim-INNER_A_BOUNDARY)/r_spacing -(real)numRow1 > 0.5) numRow1++; // squeeze in instead
+	r_use1 = (rAim-INNER_A_BOUNDARY)/(real)numRow1;
 	
 	numVertices = 0;
-
+	
 	r = INNER_A_BOUNDARY;
 	FRILL_CENTROID_INNER_RADIUS = r - r_use1*0.5;
-
+	
 	numRowprev = (int)(FULLANGLE*r/spacing)+1;
 	for (iRow = 0; iRow <= numRow1; iRow++)
 	{
@@ -757,23 +763,28 @@ int TriMesh::Initialise(int token)
 		numVertices += numRow[iRow];		
 		r_row[iRow] = r; // for temporary use
 		r += r_use1;
-	}; // numRow1 is the row at REVERSE_ZCURRENT_RADIUS
+	}; // numRow1 is the row at rAim = REVERSE_ZCURRENT_RADIUS - r_spacing*0.5
 	
 	numEndZCurrentRow = numVertices-1; // the previous one.
 	numStartZCurrentRow = numVertices-numRow[numRow1];
 	// THIS WILL HAVE TO BE CHANGED IF WE CHANGE THE NUMBER IN EACH ROW.
 	// MAYBE ONLY ADJUST DOMAIN.
+
+	// numRow1 is the row below ReverseZCurrent Radius.
 	
-	// this gets us to REVERSE_ZCURRENT_RADIUS where we put the current.
+	// Following: alternative way July2017: ensure we go to + r_spacing to take us across Reverse Jz radius.
+
+	r -= r_use1;
+	r += r_spacing;
+
 	R_aim = DEVICE_RADIUS_INSULATOR_OUTER - 0.5*r_spacing;
-	numRow2 = (int)((R_aim-REVERSE_ZCURRENT_RADIUS)/r_spacing);
-	if (((R_aim-REVERSE_ZCURRENT_RADIUS)/r_spacing) - (real)numRow2 > 0.5) numRow2++;
-	
+	numRow2 = (int)((R_aim-r)/r_spacing); // number of FURTHER rows to reach R_aim
+	if (((R_aim-r)/r_spacing) - (real)numRow2 > 0.5) numRow2++;
 	// Now stretch them:
-	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER-REVERSE_ZCURRENT_RADIUS)/
-				(((real)numRow2)+0.5);
-	r += r_use2-r_use1; 
-	for (; iRow <= numRow1+numRow2; iRow++)
+	r_use2 = (DEVICE_RADIUS_INSULATOR_OUTER-r)/(((real)numRow2)+0.5); // numRow2+0.5 actual amount of rows to reach DRIO from r
+	numRow2++; //include the row we already stepped forward.
+
+	for (iRow = numRow1 + 1; iRow <= numRow1+numRow2; iRow++) // 0,1,2,3,4=numRow1 , 5, 6,7,8,9 [numRow2++ == 5]
 	{
 		if (FULLANGLE/(real)numRowprev > spacing/r) 
 		{
@@ -824,12 +835,10 @@ int TriMesh::Initialise(int token)
 	FRILL_CENTROID_OUTER_RADIUS = r - r_use3*0.5;
 	// Used for Lap A calculating from A_frill but not for major area calc.
 	
+	// old:
 	// This is giving disagreement of areas: major areas think they
 	// include out to this centroid whereas minor areas take frill area = 0.
 	
-	// Consider what is best to do about that.
-	
-
 	// ##################################
 
 	// Now go over and increment / decrement each row to try to get the exact number of vertices.
@@ -928,10 +937,13 @@ int TriMesh::Initialise(int token)
 	Innermost_r_achieved = r;
 	numInnerVertices = 0;
 	numDomainVertices = 0;
+	Xdomain = X;
 
 	for (iRow = 0; iRow < numRows; iRow++)
 	{
 		printf("iRow %d numRow %d numRow1+numRow2 %d numRows %d \n",iRow,numRow[iRow],numRow1+numRow2,numRows);
+
+		r = r_row[iRow];
 
 		if (iRow == numRows-1) StartAvgRow = iVertex;
 
@@ -969,27 +981,11 @@ int TriMesh::Initialise(int token)
 			++iVertex;		
 			if (iRow <= numRow1+numRow2) {
 				numInnerVertices++;
+				Xdomain++;
 			} else {
 				numDomainVertices++;
 			};
 			theta += theta_spacing;
-		};
-
-		if (iRow < numRow1) {
-			r += r_use1;
-		} else {
-			if (iRow < numRow1+numRow2) // one of the inner rows, not the last one
-			{
-				r += r_use2;
-			} else {
-				if (iRow == numRow1+numRow2) {
-					// last inner row 
-					r = DEVICE_RADIUS_INSULATOR_OUTER+0.5*r_spacing; 
-					Xdomain = vert; // next point is first of domain vertices.
-				} else {
-					r += r_use3;
-				};
-			};
 		};
 	};
 
@@ -1027,7 +1023,8 @@ int TriMesh::Initialise(int token)
 		pTri->u8domain_flag = INNER_FRILL;
 		++pTri;
 	}
-	
+
+	numReverseJzTris = 0;
 	for (iRow = 0; iRow < numRows-1; iRow++)
 		// why -1 ? Because this is the bottom of the row. 
 	{	
@@ -1155,6 +1152,11 @@ int TriMesh::Initialise(int token)
 			if (iRow < numRow1+numRow2)
 			{
 				pTri->u8domain_flag = OUT_OF_DOMAIN;
+				if (iRow == numRow1)
+				{
+					pTri->u8domain_flag = REVERSE_JZ_TRI;
+					numReverseJzTris++;
+				}
 			} else {
 				if (iRow == numRow1+numRow2)
 				{
@@ -1186,6 +1188,9 @@ int TriMesh::Initialise(int token)
 		++pTri;
 		++iTri;
 	}
+
+
+
 
 	numTriangles = iTri;
 	
@@ -6597,6 +6602,8 @@ int TriMesh::Save(char * filename)
 	fwrite(&numRows,sizeof(long),1,fp); // don't ask me why
 	// also need to know that we have the correct mapping to coarse defined so save size of next level:
 	// fwrite(&numAuxVertices[0],sizeof(long),1,fp);
+	fwrite(&(EzTuning.x[0]),sizeof(double),1,fp);
+	fwrite(&numReverseJzTris,sizeof(long),1,fp);
 	
 	// if those details will all match, hopefully the rest are guessed correctly from initialisation.
 	
@@ -6633,7 +6640,9 @@ int TriMesh::Save(char * filename)
 int TriMesh::Load(char * filename)
 {
 	long read, file_version, file_numVertices, file_numTriangles, file_numRows,
-		file_numDomainVertices;
+		file_numDomainVertices, file_numRevJz;
+	double file_EzTuning;
+
 	printf("\nloading..\n");
 	FILE * fp = fopen(filename,"rb");
 	if (fp == NULL) { printf("\nfile open error\n"); return 1000001;};
@@ -6659,6 +6668,12 @@ int TriMesh::Load(char * filename)
 	if (read != 1) {printf("3rror 3\n"); return 14;};
 	read = fread(&file_numRows,sizeof(long),1,fp);
 	if (read != 1) {printf("3rror 4\n"); return 15;};
+
+	read = fread(&file_EzTuning,sizeof(double),1,fp);
+	if (read != 1) {printf("3rror 5\n"); return 16;};
+
+	read = fread(&file_numRevJz,sizeof(long),1,fp);
+	if (read != 1) {printf("3rror 5\n"); return 17;};
 //	read = fread(&file_numAuxVertices0,sizeof(long),1,fp);
 //	if (read != 1) {printf("3rror 5\n"); return 1;};
 
@@ -6682,7 +6697,13 @@ int TriMesh::Load(char * filename)
 		return 1000000;
 		// Note that the number of triangles should be constant during the simulation.
 	};
-	
+	this->EzTuning = file_EzTuning;
+	if (this->numReverseJzTris != file_numRevJz) {
+		printf("this->numReverseJzTris %d file_numRevJz %d \n",
+			this->numReverseJzTris, file_numRevJz);
+		return 120300;
+	};
+
 	// For each vertex: 
 	// position, triangles array, vector A, flags
 

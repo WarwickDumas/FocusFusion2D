@@ -211,12 +211,12 @@ real const ODE_FPRATIO = 1.0e-14; // smth seemed to be giving a too large thresh
 real const ODE_IZRELTOL = 1.0e-10; // said 1e-10 previously
 // We are going to have to chase the current by inputting a fixed amount of electrons.
 
-long const NUM_COARSE_LEVELS = 4; 
+long const NUM_COARSE_LEVELS = 3; 
 
 //long const NUM_AUX_VERTS_PER_CM_SQ[3] = {1800, 240, 40}; // *total* verts 18000 ..
 //long const NUM_AUX_VERTS_PER_CM_SQ[3] = {3600, 420, 60}; // 24000 per cm sq
 //long const NUM_AUX_VERTS_PER_CM_SQ[3] = {1800, 220, 28}; // 16000 per cm sq ..
-long const ITERATIONS_at_levels[7] = {4,4,6,8,10,12,256}; // {3, 15, 75}
+long const ITERATIONS_at_levels[7] = {4,8,12,16,20,24,256}; // {3, 15, 75}
 	// IterationsJRLS(iLevel,ITERATIONS_at_levels[iLevel+1]);				
 			
 int const CYCLEPEAKS = 1;

@@ -904,6 +904,10 @@ void TriMesh::CreateODECoefficientsAz(bool bInitial)
 	
 	real ReverseJzPerVertcell = -Iz_prescribed/(real)(numEndZCurrentRow-numStartZCurrentRow+1);
 	
+	// Now we have to think about this.
+	// Solver wants to use Jz defined on vertices. We therefore do need numStartZCurrentRow.
+	// It will not be in quite the right place.
+
 	Epsilon_Iz_constant = -((qd_or_d)Iz_prescribed)*(qd_or_d)FOURPI_OVER_C; // eps_Iz = -Iz_presc/c + Iz_domain/c
 	Epsilon_Iz_coeff_On_PhiAnode = 0.0; 
 	
@@ -6936,6 +6940,11 @@ void TriMesh::Solve_Az( real const time_back_for_Adot_if_initial )
 			pVertex->Adot = A_past*GlobalIzElasticity;
 			// Just pass 0 time back when we call this func.
 
+			if (iVertex == 20000) {
+				printf("20000: Adot.z = %1.9E\n",pVertex->Adot.z);
+				printf("20000: Adot.z = %1.9E\n",pVertex->Adot.z);
+				getch();
+			}
 			//pVertex->phidot = 0.0;
 			pVertex->phi = 0.0;
 			

@@ -1131,6 +1131,8 @@ public:
 		
 	long numStartZCurrentRow, numEndZCurrentRow; // for verts
 
+	long numReverseJzTris; // now put tris on edge of anode since offset
+
 	long StartAvgRow;
 	Matrix Coarsest;
 	Matrix LUphi;

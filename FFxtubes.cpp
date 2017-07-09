@@ -1455,18 +1455,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				Systdata_host.InvokeHost(pX->numVertices);
 				pX->PopulateSystdata_from_this(&Systdata_host);
+				
+				Systdata_host.evaltime = evaltime;
 
 				printf("calling PerformCUDAAdvance\n");
+				Systdata_host.SaveHost("testsyst.sdt");
 
 				PerformCUDA_Advance_2 (
 					&Systdata_host, 
 					pX->numVertices,
 					1e-13, 
 					10,
-					pX->numStartZCurrentRow,
-					pX->numEndZCurrentRow,
-					&Systdata_host,
-					evaltime 
+					&Systdata_host
 				);
 				evaltime += 1.0e-13;
 				printf("evaltime %1.8E\n",evaltime);
@@ -1861,6 +1861,8 @@ INT_PTR CALLBACK SetupBox(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 #ifndef NOCUDA
 void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 {
+	pSystdata->numReverseJzTris = this->numReverseJzTris;
+
 	// The idea is just to repackage TriMesh data into the desired format.
 	
 	// FOR NOW -- not sure if we initialised or what so who cares
@@ -1987,8 +1989,7 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			printf("Too many tris iVertex %d : %d \n",iVertex,tri_len);
 			getch();
 		};
-		
-		
+				
 		pSystdata->p_info[iVertex].has_periodic = 0;
 		
 		for (i = 0; i < neigh_len; i++)

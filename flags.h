@@ -17,7 +17,7 @@ int const CONCAVE_EDGE_VERTEX = 4;
 int const CONVEX_EDGE_VERTEX = 5;
 int const OUTERMOST = 5;
 int const IMMOVABLE_OUTER = 5;
-
+int const REVERSE_JZ_TRI = 6;
 
 // Note that we should find we basically never hit the insulator
 // As that would entail compressing the material too much

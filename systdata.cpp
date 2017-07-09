@@ -13,6 +13,7 @@
 // moved down because we want to run without cuda for a minute
 #ifdef __CUDACC__
 
+
 // When built into 1, this must go inside #ifdef __CUDACC__
 Systdata::Systdata() {
 	bInvoked = false;
@@ -61,7 +62,7 @@ void Systdata::Invoke (long N){
 		&&  ( !CallMAC( cudaMalloc((void**)&p_area_minor,Nminor*sizeof(f64)) ) )
 
 		&&  ( !CallMAC( cudaMalloc((void**)&p_info,Nverts*sizeof(structural)) ) )
-		&&  ( !CallMAC( cudaMalloc((void**)&p_tri_perinfo,Ntris*sizeof(CHAR4)) ) )
+		&&  ( !CallMAC( cudaMalloc((void**)&p_tri_perinfo,Nminor*sizeof(CHAR4)) ) )
 		&&  ( !CallMAC( cudaMalloc((void**)&p_tri_per_neigh,Ntris*sizeof(CHAR4)) ) )
 		&&  ( !CallMAC( cudaMalloc((void**)&p_tri_corner_index,Ntris*sizeof(LONG3)) ) )
 		&&  ( !CallMAC( cudaMalloc((void**)&p_neigh_tri_index,Ntris*sizeof(LONG3)) ) )
@@ -94,7 +95,7 @@ void Systdata::Invoke (long N){
 		if (Nverts != N) { printf("Systdata Error - Nverts %d != N %d\n",Nverts,N); getch(); }
 	};
 }
-#else
+//#else
 	
 void Systdata::InvokeHost (long N){
 	printf("Systdata::InvokeHost N %d\n",N);
@@ -129,7 +130,7 @@ void Systdata::InvokeHost (long N){
 
 		p_info = (structural *)malloc(Nverts*sizeof(structural));
 		p_tri_perinfo = (CHAR4 *)malloc(Ntris*sizeof(CHAR4));
-		p_tri_per_neigh = (CHAR4 *)malloc(Ntris*sizeof(CHAR4));
+		p_tri_per_neigh = (CHAR4 *)malloc(Nminor*sizeof(CHAR4));
 		p_tri_corner_index = (LONG3 *)malloc(Ntris*sizeof(LONG3));
 		p_neigh_tri_index = (LONG3 *)malloc(Ntris*sizeof(LONG3));
 		
@@ -162,9 +163,9 @@ void Systdata::InvokeHost (long N){
 							getch(); }
 	};
 }
-#endif
+//#endif
 
-#ifdef __CUDACC__
+//#ifdef __CUDACC__
 
 void Systdata::Zero () {
 	if (bInvoked)
@@ -194,7 +195,7 @@ void Systdata::Zero () {
 		CallMAC( cudaMemset(p_area_minor,0,Nminor*sizeof(f64)) ) ;
 		
 		CallMAC( cudaMemset(p_info,0,Nverts*sizeof(structural)) ) ;
-		CallMAC( cudaMemset(p_tri_perinfo,0,Ntris*sizeof(CHAR4)) ) ;
+		CallMAC( cudaMemset(p_tri_perinfo,0,Nminor*sizeof(CHAR4)) ) ;
 		CallMAC( cudaMemset(p_tri_per_neigh,0,Ntris*sizeof(CHAR4)) ) ;
 		CallMAC( cudaMemset(p_tri_corner_index,0,Ntris*sizeof(LONG3)) ) ;
 		CallMAC( cudaMemset(p_neigh_tri_index,0,Ntris*sizeof(LONG3)) ) ;
@@ -217,7 +218,7 @@ void Systdata::Zero () {
 		printf("Zero called before InvokeHost.\n"); getch();
 	};
 }
-#else
+//#else
 		
 void Systdata::ZeroHost () {
 	if (bInvokedHost)
@@ -254,7 +255,165 @@ void Systdata::ZeroHost () {
 	} else {
 		printf("Zero called before InvokeHost.\n"); getch();
 	};
+
 }
+
+int Systdata::SaveHost(const char str[])
+{
+	FILE * fp;
+	fp = fopen(str,"wb");
+	if (fp == 0) {
+		printf("Failed to open %s \n",str);
+		getch();
+		return 1;
+	} else {
+		printf(" %s opened \n",str);
+		
+		fwrite(&Nverts,sizeof(long),1,fp);
+		fwrite(&Ntris,sizeof(long),1,fp);
+		fwrite(&Nminor,sizeof(long),1,fp);
+		fwrite(&numReverseJzTris,sizeof(long),1,fp);
+
+		fwrite(&evaltime, sizeof(f64),1,fp);
+
+		// Data:
+		// =====
+		
+		fwrite(p_phi,sizeof(f64),Nverts,fp);
+		fwrite(p_phidot,sizeof(f64),Nverts,fp);
+
+		fwrite(p_A,sizeof(f64_vec3),Nminor,fp);
+		fwrite(p_Adot,sizeof(f64_vec3),Nminor,fp);
+
+		fwrite(p_nT_neut_minor,sizeof(nT),Nminor,fp);
+		fwrite(p_nT_ion_minor,sizeof(nT),Nminor,fp);
+		fwrite(p_nT_elec_minor,sizeof(nT),Nminor,fp);
+
+		fwrite(p_v_neut,sizeof(f64_vec3),Nminor,fp);
+		fwrite(p_v_ion,sizeof(f64_vec3),Nminor,fp);
+		fwrite(p_v_elec,sizeof(f64_vec3),Nminor,fp);
+
+		fwrite(p_area,sizeof(f64),Nverts,fp);
+		fwrite(p_area_minor,sizeof(f64),Nminor,fp);
+		
+		// Structural information:
+		// =======================
+
+		fwrite(p_info,sizeof(structural),Nverts,fp);
+		fwrite(p_tri_perinfo,sizeof(CHAR4),Nminor,fp);
+		fwrite(p_tri_per_neigh,sizeof(CHAR4),Ntris,fp);
+		fwrite(p_tri_corner_index,sizeof(LONG3),Ntris,fp);
+		fwrite(p_neigh_tri_index,sizeof(LONG3),Ntris,fp);
+
+		fwrite(pIndexNeigh,sizeof(long),MAXNEIGH_d*Nverts,fp);
+		fwrite(pIndexTri,sizeof(long),MAXNEIGH_d*Nverts,fp);
+		fwrite(pPBCneigh,sizeof(char),MAXNEIGH_d*Nverts,fp);
+		fwrite(pPBCtri,sizeof(char),MAXNEIGH_d*Nverts,fp);
+		fwrite(p_tri_centroid,sizeof(f64_vec2),Ntris,fp);
+
+		// Derivatives:
+		// =============
+
+		// Skip grad phi, Lap A, grad Te.
+		fwrite(p_B,sizeof(f64_vec3),Nminor,fp);
+
+		fclose(fp);
+		printf("%s closed\n",str);
+	};
+	return 0;
+}
+
+int Systdata::LoadHost(const char str[])
+{
+	// fwrite is suited to flatpacks:
+	FILE * fp;
+	fp = fopen(str,"rb");
+	
+	if (fp == 0) {
+		printf("Failed to open %s \n",str);
+		getch();
+		return 1;
+	} else {
+		printf(" %s opened to read \n",str);
+
+		rewind(fp);
+	
+		long Nverts_file, Ntris_file, Nminor_file, numRevJz_file;
+
+		fread(&Nverts_file,sizeof(long),1,fp);
+		fread(&Ntris_file,sizeof(long),1,fp);
+		fread(&Nminor_file,sizeof(long),1,fp);
+		fread(&numRevJz_file,sizeof(long),1,fp);
+
+		if (Nverts_file != Nverts) {
+			printf("Nverts_file %d Nverts %d\n",Nverts_file,Nverts);
+			getch();
+			return 1;
+		};
+		if (Ntris_file != Ntris) {
+			printf("Ntris_file %d Ntris %d\n",Ntris_file,Ntris);
+			getch();
+			return 1;
+		};
+		if (Nminor_file != Nminor) {
+			printf("Nminor_file %d Nminor %d\n",Nminor_file,Nminor);
+			getch();
+			return 1;
+		};
+		if (numRevJz_file != numReverseJzTris) {
+			printf("numRevJz_file %d ours %d\n",numRevJz_file,numReverseJzTris);
+			getch();
+			return 1;
+		};
+
+		fread(&evaltime, sizeof(f64),1,fp);
+
+		// Data:
+		// =====
+		fread(p_phi,sizeof(f64),Nverts,fp);
+		fread(p_phidot,sizeof(f64),Nverts,fp);
+
+		fread(p_A,sizeof(f64_vec3),Nminor,fp);
+		fread(p_Adot,sizeof(f64_vec3),Nminor,fp);
+
+		fread(p_nT_neut_minor,sizeof(nT),Nminor,fp);
+		fread(p_nT_ion_minor,sizeof(nT),Nminor,fp);
+		fread(p_nT_elec_minor,sizeof(nT),Nminor,fp);
+
+		fread(p_v_neut,sizeof(f64_vec3),Nminor,fp);
+		fread(p_v_ion,sizeof(f64_vec3),Nminor,fp);
+		fread(p_v_elec,sizeof(f64_vec3),Nminor,fp);
+
+		fread(p_area,sizeof(f64),Nverts,fp);
+		fread(p_area_minor,sizeof(f64),Nminor,fp);
+		
+		// Structural information:
+		// =======================
+
+		fread(p_info,sizeof(structural),Nverts,fp);
+		fread(p_tri_perinfo,sizeof(CHAR4),Nminor,fp);
+		fread(p_tri_per_neigh,sizeof(CHAR4),Ntris,fp);
+		fread(p_tri_corner_index,sizeof(LONG3),Ntris,fp);
+		fread(p_neigh_tri_index,sizeof(LONG3),Ntris,fp);
+
+		fread(pIndexNeigh,sizeof(long),MAXNEIGH_d*Nverts,fp);
+		fread(pIndexTri,sizeof(long),MAXNEIGH_d*Nverts,fp);
+		fread(pPBCneigh,sizeof(char),MAXNEIGH_d*Nverts,fp);
+		fread(pPBCtri,sizeof(char),MAXNEIGH_d*Nverts,fp);
+		fread(p_tri_centroid,sizeof(f64_vec2),Ntris,fp);
+
+		// Derivatives:
+		// =============
+
+		// Skip grad phi, Lap A, grad Te.
+		fread(p_B,sizeof(f64_vec3),Nminor,fp);
+
+		fclose(fp);
+		printf("%s closed\n",str);
+	};
+	return 0;
+}
+
 #endif
 
 #ifdef __CUDACC__

@@ -192,7 +192,7 @@ __constant__ f64 T_ion_avg_sq_d, T_neut_avg_sq_d, T_elec_avg_sq_d,
 				MAXERRPPNSQ_d, AVGFAC_d, ABSTHRESHFLUX_SQ_d,ENDPT_MAXERRPPN_SQ_d,
 				avgTe,avgTi,avgTn;
 
-__constant__ long ReverseJzIndexStart, ReverseJzIndexEnd; // MaxNeigh_d
+//__constant__ long ReverseJzIndexStart, ReverseJzIndexEnd; // MaxNeigh_d
 // use #define MAXNEIGH_d but we will have to allow that there is a different
 // maximum used for arrays loaded-in than for actual max in list.
 // Could be 10 vs 20.
@@ -212,7 +212,7 @@ __device__ f64_vec2 * p_grad_phidot;
 __device__ f64_vec3 * p_MAR_neut, * p_MAR_ion, * p_MAR_elec;
 __device__ nn *p_nn_ionrec_minor;
 
-#include "helpers.cu"
+#include "E:/focusfusion/FFxtubes/helpers.cu"
 
 #define Set_f64_constant(dest, src) { \
 		Call(cudaGetSymbolAddress((void **)(&f64address), dest ), \
@@ -257,19 +257,150 @@ real GetIzPrescribed(real const t)
 
 #include "newkernel2.cu"
 
+
+nn * p_nn_host;
+f64_vec3 * p_MAR_ion_host, * p_MAR_neut_host, * p_MAR_elec_host;
+
+void Systdata::AsciiOutput (const char filename[]) const 
+{
+	FILE * file = fopen(filename,"w");
+	if (file == 0) {
+		printf("could not open %s",filename);
+		getch();
+		getch();
+		return;
+	} ;
+	printf("%s opened",filename);
+	
+	fprintf(file,"index flag | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
+		"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
+		"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
+		"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
+		"GradTe_x GradTe_y phi \n");
+	
+	for (int iMinor = 0; iMinor < this->Nminor; iMinor++)
+	{
+		f64 temp1;
+	//	cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
+	//	sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
+		
+		printf("%d ",iMinor);
+		
+		int flag;
+		if (iMinor < BEGINNING_OF_CENTRAL) {
+			flag = this->p_tri_perinfo[iMinor].flag;
+		} else {
+			flag = this->p_info[iMinor].flag;
+		};
+
+		fprintf(file,"%d %d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
+			" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
+			iMinor, flag,
+			this->p_nT_neut_minor[iMinor].n,this->p_nT_neut_minor[iMinor].T,
+			this->p_nT_ion_minor[iMinor].n,this->p_nT_ion_minor[iMinor].T,
+			this->p_nT_elec_minor[iMinor].n,this->p_nT_elec_minor[iMinor].T,
+			p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
+			this->p_B[iMinor].x,this->p_B[iMinor].y,this->p_B[iMinor].z,
+			this->p_v_neut[iMinor].x,this->p_v_neut[iMinor].y,this->p_v_neut[iMinor].z,
+			this->p_v_ion[iMinor].x,this->p_v_ion[iMinor].y,this->p_v_ion[iMinor].z,
+			this->p_v_elec[iMinor].x,this->p_v_elec[iMinor].y,this->p_v_elec[iMinor].z
+			);
+			
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
+			this->p_grad_phi[iMinor].x,this->p_grad_phi[iMinor].y,
+			this->p_Lap_A[iMinor].x,this->p_Lap_A[iMinor].y,this->p_Lap_A[iMinor].z,
+			this->p_A[iMinor].z,
+			this->p_Adot[iMinor].x,this->p_Adot[iMinor].y,this->p_Adot[iMinor].z,
+			0.0);
+			//temp1);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E ",
+			p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E ",
+			p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E ",
+			p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z);
+		
+		fprintf(file,		" %1.14E %1.14E ",
+			this->p_GradTe[iMinor].x,this->p_GradTe[iMinor].y);
+		
+		if (iMinor < BEGINNING_OF_CENTRAL) {
+			fprintf(file," %1.10E %1.10E ",this->p_tri_centroid[iMinor].x,this->p_tri_centroid[iMinor].y);
+		} else {
+			fprintf(file," %1.10E | %1.10E %1.10E ",
+				this->p_phi[iMinor-BEGINNING_OF_CENTRAL],
+				this->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
+				this->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
+		};
+		fprintf(file,"\n");
+	};
+	fclose(file);
+	
+}
+
+
+void SendToHost(const Systdata * pX_nvT, const Systdata * pXhalf, const Systdata * pX_host)
+{
+	cudaMemcpy(pX_host->p_phi,					pXhalf->p_phi,
+		sizeof(f64)*pX_host->Nverts,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_nT_neut_minor,		pX_nvT->p_nT_neut_minor,
+		sizeof(nT)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_nT_ion_minor,			pX_nvT->p_nT_ion_minor,
+		sizeof(nT)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_nT_elec_minor,		pX_nvT->p_nT_elec_minor,
+		sizeof(nT)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(pX_host->p_tri_centroid,		pXhalf->p_tri_centroid,
+		sizeof(f64_vec2)*pX_host->Ntris,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_B,				pXhalf->p_B,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(pX_host->p_v_neut,			pX_nvT->p_v_neut,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_v_ion,			pX_nvT->p_v_ion,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_v_elec,			pX_nvT->p_v_elec,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(pX_host->p_grad_phi,			pXhalf->p_grad_phi,
+		sizeof(f64_vec2)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_Lap_A,			pXhalf->p_Lap_A,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(pX_host->p_Adot,				pXhalf->p_Adot,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(pX_host->p_GradTe,			pX_nvT->p_GradTe,
+		sizeof(f64_vec2)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+
+	cudaMemcpy(p_nn_host,					p_nn_ionrec_minor,
+		sizeof(nn)*pX_host->Nminor,					cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_MAR_neut_host,				p_MAR_neut,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	cudaMemcpy(p_MAR_elec_host,				p_MAR_elec,
+		sizeof(f64_vec3)*pX_host->Nminor,			cudaMemcpyDeviceToHost);
+	
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies S2H");
+
+}
+
 void PerformCUDA_Advance_2 (
 		const Systdata * pX_host, // populate in CPU MSVC routine...
 		long numVerts,
 		const real hsub, 
 		const int numSubsteps,
-		long numStartZCurrentRow,
-		long numEndZCurrentRow,
-		const Systdata * pX_host_target,
-		f64 t // time of first timeslice
+		const Systdata * pX_host_target
 		)
 {
 	// Preliminaries:
-
+	
 	char buffer[256];
 	FILE * fpdebug;
 	
@@ -282,9 +413,8 @@ void PerformCUDA_Advance_2 (
 	long numVertices = numVerts;
 	real const hstep = hsub/(real)numSubsteps;
 	
-	nn * p_nn_host;
-	f64_vec3 * p_MAR_ion_host, * p_MAR_neut_host, * p_MAR_elec_host;
-
+	real evaltime = pX_host->evaltime;
+	real t = evaltime;
 
 	printf("pXhost->p_Adot[20000 + BEGINNING_OF_CENTRAL].z %1.10E\n",pX_host->p_Adot[20000 + BEGINNING_OF_CENTRAL].z);
 
@@ -366,14 +496,15 @@ void PerformCUDA_Advance_2 (
 	Call(cudaMemcpy( T2address, &clock2, sizeof(f64_tens2),cudaMemcpyHostToDevice),
 		"cudaMemcpy( T2address, &clock2, sizeof(f64_tens2),cudaMemcpyHostToDevice) U");
 	
-	CallMAC(cudaGetSymbolAddress((void **)(&address),ReverseJzIndexStart));
-	CallMAC(cudaMemcpy( address, &numStartZCurrentRow, sizeof(long),cudaMemcpyHostToDevice));
-	long past_end = numEndZCurrentRow+1;
-	CallMAC(cudaGetSymbolAddress((void **)(&address),ReverseJzIndexEnd));
-	CallMAC(cudaMemcpy( address, &past_end, sizeof(long),cudaMemcpyHostToDevice));
+	//CallMAC(cudaGetSymbolAddress((void **)(&address),ReverseJzIndexStart));
+	//CallMAC(cudaMemcpy( address, &numStartZCurrentRow, sizeof(long),cudaMemcpyHostToDevice));
+	//long past_end = numEndZCurrentRow+1;
+	//CallMAC(cudaGetSymbolAddress((void **)(&address),ReverseJzIndexEnd));
+	//CallMAC(cudaMemcpy( address, &past_end, sizeof(long),cudaMemcpyHostToDevice));
 	
-	// numEndZCurrentRow = numVertices-1; // the previous one.
-	// numStartZCurrentRow = numVertices-numRow[numRow1];
+
+	//// numEndZCurrentRow = numVertices-1; // the previous one.
+	//// numStartZCurrentRow = numVertices-numRow[numRow1];
 	
 	// For floating point constants you have two choices:
 	// 1. #define MAY be faster, but can only be used if no danger of
@@ -667,14 +798,15 @@ void PerformCUDA_Advance_2 (
 			pX1->p_phi
 		);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize InitialisePhi.");
-	f64 tempf64;
-	cudaMemcpy(&tempf64,pX1->p_phi+10000,sizeof(f64),cudaMemcpyDeviceToHost);
-	printf("pX1->p_phi[10000] %1.9E k1 %1.5E k2 %1.5E\n"
-		"==============================================\n",
-		tempf64,k1,k2);
+	
+	//f64 tempf64;
+	//cudaMemcpy(&tempf64,pX1->p_phi+10000,sizeof(f64),cudaMemcpyDeviceToHost);
+	//printf("pX1->p_phi[10000] %1.9E k1 %1.5E k2 %1.5E\n"
+	//	"==============================================\n",
+	//	tempf64,k1,k2);
 	// First thing is to see why this is zero, then see why #IND in Xhalf.
 	
-		
+	
 	Kernel_CalculateTriMinorAreas_AndCentroids<<<numTriTiles, threadsPerTileMinor>>>		
 		(
 			pX1->p_info,
@@ -694,7 +826,7 @@ void PerformCUDA_Advance_2 (
 	} else {
 		printf("Kernel_CalculateTriMinorAreas_AndCentroids No error found,\n");
 	}
-
+	
 	Kernel_CalculateCentralMinorAreas<<<numTilesMajor, threadsPerTileMajor>>>(
 		 pX1->p_info,
 		 pX1->pIndexTri, // lists of length 12
@@ -709,34 +841,34 @@ void PerformCUDA_Advance_2 (
 	} else {
 		printf("Kernel_CalculateCentralMinorAreas No error found,\n");
 	}
+	
+	//CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area_minor,sizeof(f64)*pX1->Nminor,cudaMemcpyDeviceToHost));
+	//f64 areasum = 0.0;
+	//int iTest;
+	//for (iTest = 0; iTest < pX1->Ntris; iTest++)
+	//{
+	//	if (p_scratch_host[iTest] < 0.0) {
+	//		printf("iTest %d %1.5E \n",iTest,p_scratch_host[iTest]);
+	//	};
+	//	areasum += p_scratch_host[iTest];
+	//}
+	//printf("Areasum tris only %1.12E \n",areasum); // -2500.
+	//for (; iTest < pX1->Nminor; iTest++)
+	//{
+	//	areasum += p_scratch_host[iTest];
+	//}
+	//printf("Areasum %1.12E \n",areasum);
 
-	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area_minor,sizeof(f64)*pX1->Nminor,cudaMemcpyDeviceToHost));
-	f64 areasum = 0.0;
-	int iTest;
-	for (iTest = 0; iTest < pX1->Ntris; iTest++)
-	{
-		if (p_scratch_host[iTest] < 0.0) {
-			printf("iTest %d %1.5E \n",iTest,p_scratch_host[iTest]);
-		};
-		areasum += p_scratch_host[iTest];
-	}
-	printf("Areasum tris only %1.12E \n",areasum); // -2500.
-	for (; iTest < pX1->Nminor; iTest++)
-	{
-		areasum += p_scratch_host[iTest];
-	}
-	printf("Areasum %1.12E \n",areasum);
-
-	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
-	areasum = 0.0;
-	FILE * fp = fopen("oldareas.txt","w");
-	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
-	{
-		areasum += p_scratch_host[iTest];
-		fprintf(fp,"%d %1.15E\n",iTest,p_scratch_host[iTest]);
-	}
-	fclose(fp);
-	printf("Areasum_major old %1.12E \n",areasum);
+	//CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
+	//areasum = 0.0;
+	//FILE * fp = fopen("oldareas.txt","w");
+	//for (int iTest = 0; iTest < pX1->Nverts; iTest++)
+	//{
+	//	areasum += p_scratch_host[iTest];
+	//	fprintf(fp,"%d %1.15E\n",iTest,p_scratch_host[iTest]);
+	//}
+	//fclose(fp);
+	//printf("Areasum_major old %1.12E \n",areasum);
 
 	Kernel_CalculateMajorAreas<<<numTilesMajor,threadsPerTileMajor>>>(
 			pX1->p_info,
@@ -747,9 +879,9 @@ void PerformCUDA_Advance_2 (
 			);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateMajorAreas");
 	
-	fp = fopen("newareas.txt","w");
+	FILE * fp = fopen("newareas.txt","w");
 	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
-	areasum = 0.0;
+	f64 areasum = 0.0;
 	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
 	{
 		areasum += p_scratch_host[iTest];
@@ -820,18 +952,10 @@ void PerformCUDA_Advance_2 (
 	};	
 	printf("Iz after areas %1.12E \n",Iz0);
 	getch();
-
-	//Kernel_GetZCurrent<<<numTilesMinor,threadsPerTileMinor>>>(
-	//	pX1->p_tri_perinfo,
-	//	pX1->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
-	//	pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-	//	pX1->p_v_ion,
-	//	pX1->p_v_elec, // Not clear if this should be nv or {n,v} yet - think.
-	//	pX1->p_area_minor,
-	//	p_summands
-	//	);
-	//Call(cudaThreadSynchronize(),"cudaThreadSynchronize GetZCurrent 1.");
-	//
+	
+	SendToHost(pX1, pX1, pX_host);
+	pX_host->AsciiOutput("inputs_pX1.txt");
+	printf("done ascii output of pX1\n\n");
 	getch();
 
 	int iSubstep;
@@ -844,7 +968,7 @@ void PerformCUDA_Advance_2 (
 		f64 thalf = t + hstep*0.5;
 		// Set ReverseJz before each call to Advance Potentials.
 		f64 Iz_prescribed = GetIzPrescribed(thalf);
-		f64 fourpioverc_reverse_Jz = -FOUR_PI_OVER_C_*Iz_prescribed/(f64)(past_end-numStartZCurrentRow);
+		f64 fourpioverc_reverse_Jz = -FOUR_PI_OVER_C_*Iz_prescribed/(f64)(Syst1.numReverseJzTris);
 		Set_f64_constant(four_pi_over_c_ReverseJz,fourpioverc_reverse_Jz);
 		// thalf because we use it to advance dA/dt from k to k+1, via ReverseJz.
 		// HOWEVER, we also aim for Iz_prescribed
@@ -1387,28 +1511,26 @@ void PerformCUDA_Advance_2 (
 		cudaMemset(p_MAR_ion,0,sizeof(f64_vec3)*pX1->Nminor);
 		cudaMemset(p_MAR_elec,0,sizeof(f64_vec3)*pX1->Nminor);
 
-		FILE * fp = fopen("tri_data.txt","w");
-		for (int iii = 0; iii < Syst1.Ntris; iii++)
-		{
-			fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
-				pX_host->p_tri_corner_index[iii].i2,
-				pX_host->p_tri_corner_index[iii].i3);
-		}
-		fclose(fp);
-
-		cudaMemcpy(pX_host->p_tri_corner_index,pX1->p_tri_corner_index,
-			sizeof(LONG3)*Syst1.Ntris,
-			cudaMemcpyDeviceToHost
-			);
-
-		fp = fopen("tri_data2.txt","w");
-		for (int iii = 0; iii < Syst1.Ntris; iii++)
-		{
-			fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
-				pX_host->p_tri_corner_index[iii].i2,
-				pX_host->p_tri_corner_index[iii].i3);
-		}
-		fclose(fp);
+		//FILE * fp = fopen("tri_data.txt","w");
+		//for (int iii = 0; iii < Syst1.Ntris; iii++)
+		//{
+		//	fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
+		//		pX_host->p_tri_corner_index[iii].i2,
+		//		pX_host->p_tri_corner_index[iii].i3);
+		//}
+		//fclose(fp);
+		//cudaMemcpy(pX_host->p_tri_corner_index,pX1->p_tri_corner_index,
+		//	sizeof(LONG3)*Syst1.Ntris,
+		//	cudaMemcpyDeviceToHost
+		//	);
+		//fp = fopen("tri_data2.txt","w");
+		//for (int iii = 0; iii < Syst1.Ntris; iii++)
+		//{
+		//	fprintf(fp,"%d %d %d %d\n",iii,pX_host->p_tri_corner_index[iii].i1,
+		//		pX_host->p_tri_corner_index[iii].i2,
+		//		pX_host->p_tri_corner_index[iii].i3);
+		//}
+		//fclose(fp);
 
 		::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
 			(
@@ -1556,126 +1678,20 @@ void PerformCUDA_Advance_2 (
 		f64 temp1, temp2;
 		nT nTtemp3, nTtemp4;
 
-		cudaMemcpy(&temp1,&(pX1->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
-		cudaMemcpy(&temp2,&(pXhalf->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
-		cudaMemcpy(&nTtemp3,&(pX1->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
-		cudaMemcpy(&nTtemp4,&(pXhalf->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&temp1,&(pX1->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&temp2,&(pXhalf->p_phi[10000]),sizeof(f64),cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&nTtemp3,&(pX1->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
+		//cudaMemcpy(&nTtemp4,&(pXhalf->p_nT_elec_minor[89000]),sizeof(nT),cudaMemcpyDeviceToHost);
+		//
+		//printf("phi[10000] %1.9E %1.9E \nTe[89000] %1.5E %1.5E\n",
+		//	temp1,temp2,nTtemp3.T,nTtemp4.T);
+		//getch();
 		
-		printf("phi[10000] %1.9E %1.9E \nTe[89000] %1.5E %1.5E\n",
-			temp1,temp2,nTtemp3.T,nTtemp4.T);
-		getch();
-		
-		cudaMemcpy(pX_host->p_phi,		pX1->p_phi,
-			sizeof(f64)*Syst1.Nverts,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_nT_neut_minor,		pXhalf->p_nT_neut_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_nT_ion_minor,			pXhalf->p_nT_ion_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_nT_elec_minor,		pXhalf->p_nT_elec_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_nn_host,						p_nn_ionrec_minor,
-			sizeof(nn)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_tri_centroid,		pXhalf->p_tri_centroid,
-			sizeof(f64_vec2)*Syst1.Ntris,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_B,				pXhalf->p_B,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_neut,			pXhalf->p_v_neut,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_ion,			pXhalf->p_v_ion,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_elec,			pXhalf->p_v_elec,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_grad_phi,			pXhalf->p_grad_phi,
-			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_Lap_A,			pXhalf->p_Lap_A,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_Adot,				pXhalf->p_Adot,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_neut_host,				p_MAR_neut,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_elec_host,				p_MAR_elec,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_GradTe,			pXhalf->p_GradTe,
-			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-	//	cudaMemcpy(pX_host->p_, pX1->p_Adot, 
-	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
-		
-		FILE * file;
-		/*
-		file = fopen("inputs_2.txt","w");
-		if (file == 0) {
-			printf("could not open inputs_2.txt");
-			while (1) getch();
-		} else {
-			printf("inputs_2.txt opened");
-			getch();
-		};
-
-		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
-			"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
-			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
-			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
-			"GradTe_x GradTe_y phi \n");
-		
-		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
-		{
-			f64 temp1;
-			cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
-			sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
-
-			printf("%d ",iMinor);
-
-			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
-				" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
-				iMinor, 
-				pX_host->p_nT_neut_minor[iMinor].n,pX_host->p_nT_neut_minor[iMinor].T,
-				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
-				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
-				p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
-				pX_host->p_B[iMinor].x,pX_host->p_B[iMinor].y,pX_host->p_B[iMinor].z,
-				pX_host->p_v_neut[iMinor].x,pX_host->p_v_neut[iMinor].y,pX_host->p_v_neut[iMinor].z,
-				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
-				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z
-				);
-				
-			fprintf(file,	
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
-				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
-				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
-				pX_host->p_A[iMinor].z,
-				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1);
-
-			fprintf(file,	
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | "
-				" %1.14E %1.14E ",
-				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
-				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
-				p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z,
-				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y);
-
-			if (iMinor < BEGINNING_OF_CENTRAL) {
-				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
-			} else {
-				fprintf(file," %1.10E | %1.10E %1.10E ",
-					pX_host->p_phi[iMinor-BEGINNING_OF_CENTRAL],
-					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
-					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
-			};
-			fprintf(file,"\n");
-		};
-		fclose(file);
-		// v and gradphi come back as IND / viz,vez INF.
-
-		printf("inputs output done.\n");
-
-		getch();*/
+		SendToHost(pXhalf, pXhalf, pX_host);		
+		pX_host->AsciiOutput("Inputs_half.txt");
 		
 		printf("start midpt step:\n");
-		
+		pXhalf->evaltime = pX1->evaltime + 0.5*hstep;
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 			(
 				hstep,
@@ -1735,7 +1751,7 @@ void PerformCUDA_Advance_2 (
 		// The amount of resistive heating depends on Ez of course...
 		// but we don't want to have to run twice at this juncture.
 		// Therefore?		
-		
+	
 		// . The heating routine also cements the effects of ionisation on n.
 		// . Assume central ionisation == vertcell ionisation.
 		Kernel_Heating_routine<<<numTilesMajor,threadsPerTileMajor>>>(
@@ -1758,7 +1774,7 @@ void PerformCUDA_Advance_2 (
 			p_resistive_heat_ion_minor,
 			p_resistive_heat_elec_minor,
 			
-			pXhalf->p_area,
+			pXhalf->p_area, // major areas
 			
 			// output:
 			pXusable->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
@@ -1768,7 +1784,32 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Heating 1");
 		
+		::Kernel_Average_nT_to_tri_minors<<<numTriTiles,threadsPerTileMinor>>>(
+										pX1->p_tri_corner_index,
+										pX1->p_tri_perinfo, 
+										pXusable->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_neut_minor,
+										pXusable->p_nT_ion_minor,
+										pXusable->p_nT_elec_minor);
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXusable");
+		
 		printf("Heating 1 done\n");
+		
+		//cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
+	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
+	//	Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
+		
+		/*file = fopen("ionMAR.txt","w");
+		if (file == 0) {
+			printf("could not open ionMAR.txt");
+			while (1) getch();
+		} else {
+			printf("ionMAR.txt opened");
+			getch();
+		};*/
+
 
 		// OKay let's think about visc htg and conductive htg.
 		// Conduction has to be done on major cells, using the B field etc from the minor cells.
@@ -1793,7 +1834,7 @@ void PerformCUDA_Advance_2 (
 		cudaMemset(p_MAR_neut,0,sizeof(f64_vec3)*pX1->Nminor);
 		cudaMemset(p_MAR_ion,0,sizeof(f64_vec3)*pX1->Nminor);
 		cudaMemset(p_MAR_elec,0,sizeof(f64_vec3)*pX1->Nminor);
-		
+	
 		// We have not changed A - it's still the same so no need to go again for Lap A.
 		// We have not changed phi. But we have changed Te so re-estimate its gradient.
 		::Kernel_Compute_grad_phi_Te_tris<<<numTriTiles, threadsPerTileMinor>>>
@@ -1887,119 +1928,16 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize splitout nn");
 
-		cudaMemcpy(pX_host->p_phi,		pXhalf->p_phi,
-			sizeof(f64)*Syst1.Nverts,			cudaMemcpyDeviceToHost);
+		SendToHost(pXusable,pXhalf,pX_host);
 
-		cudaMemcpy(pX_host->p_nT_neut_minor,		pXusable->p_nT_neut_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_nT_ion_minor,			pXusable->p_nT_ion_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_nT_elec_minor,		pXusable->p_nT_elec_minor,
-			sizeof(nT)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_nn_host,						p_nn_ionrec_minor,
-			sizeof(nn)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_tri_centroid,		pXhalf->p_tri_centroid,
-			sizeof(f64_vec2)*Syst1.Ntris,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_B,				pXhalf->p_B,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_neut,			pXusable->p_v_neut,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_ion,			pXusable->p_v_ion,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_v_elec,			pXusable->p_v_elec,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_grad_phi,			pXhalf->p_grad_phi,
-			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_Lap_A,			pXhalf->p_Lap_A,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_Adot,				pXhalf->p_Adot,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_neut_host,				p_MAR_neut,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(p_MAR_elec_host,				p_MAR_elec,
-			sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-		cudaMemcpy(pX_host->p_GradTe,			pXusable->p_GradTe,
-			sizeof(f64_vec2)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-	//	cudaMemcpy(pX_host->p_, pX1->p_Adot, 
-	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
-
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
-		
-		file = fopen("inputs_3.txt","w");
-		if (file == 0) {
-			printf("could not open inputs_3.txt");
-			while (1) getch();
-		} else {
-			printf("inputs_3.txt opened");
-			getch();
-		};
-
-		fprintf(file,"index | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
-			"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
-			"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
-			"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
-			"GradTe_x GradTe_y phi \n");
-		
-		for (int iMinor = 0; iMinor < Syst1.Nminor; iMinor++)
-		{
-			f64 temp1;
-			cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
-			sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
-
-			printf("%d ",iMinor);
-
-			fprintf(file,"%d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
-				" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
-				iMinor, 
-				pX_host->p_nT_neut_minor[iMinor].n,pX_host->p_nT_neut_minor[iMinor].T,
-				pX_host->p_nT_ion_minor[iMinor].n,pX_host->p_nT_ion_minor[iMinor].T,
-				pX_host->p_nT_elec_minor[iMinor].n,pX_host->p_nT_elec_minor[iMinor].T,
-				p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
-				pX_host->p_B[iMinor].x,pX_host->p_B[iMinor].y,pX_host->p_B[iMinor].z,
-				pX_host->p_v_neut[iMinor].x,pX_host->p_v_neut[iMinor].y,pX_host->p_v_neut[iMinor].z,
-				pX_host->p_v_ion[iMinor].x,pX_host->p_v_ion[iMinor].y,pX_host->p_v_ion[iMinor].z,
-				pX_host->p_v_elec[iMinor].x,pX_host->p_v_elec[iMinor].y,pX_host->p_v_elec[iMinor].z
-				);
-				
-			fprintf(file,	
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
-				pX_host->p_grad_phi[iMinor].x,pX_host->p_grad_phi[iMinor].y,
-				pX_host->p_Lap_A[iMinor].x,pX_host->p_Lap_A[iMinor].y,pX_host->p_Lap_A[iMinor].z,
-				pX_host->p_A[iMinor].z,
-				pX_host->p_Adot[iMinor].x,pX_host->p_Adot[iMinor].y,pX_host->p_Adot[iMinor].z,temp1);
-
-			fprintf(file,	
-				" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
-				p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z,
-				p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z,
-				p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z);
-
-			fprintf(file,		" %1.14E %1.14E ",
-				pX_host->p_GradTe[iMinor].x,pX_host->p_GradTe[iMinor].y);
-
-			if (iMinor < BEGINNING_OF_CENTRAL) {
-				fprintf(file," %1.10E %1.10E ",pX_host->p_tri_centroid[iMinor].x,pX_host->p_tri_centroid[iMinor].y);
-			} else {
-				fprintf(file," %1.10E | %1.10E %1.10E ",
-					pX_host->p_phi[iMinor-BEGINNING_OF_CENTRAL],
-					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
-					pX_host->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
-			};
-			fprintf(file,"\n");
-		};
-		fclose(file);
+		pX_host->AsciiOutput("inputs_3__.txt");
 		// v and gradphi come back as IND / viz,vez INF.
 
-		printf("inputs output done.\n");
-
-		getch();
 		// Establish Ohmic relationship:
 		printf("ready to do midpt again\n");
 		getch();
 
-
+		pXusable->evaltime = pXhalf->evaltime;
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 		(
 			hstep,
@@ -2159,6 +2097,18 @@ void PerformCUDA_Advance_2 (
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Heating 2");
 		printf("heating done\n");
 		
+		::Kernel_Average_nT_to_tri_minors<<<numTriTiles,threadsPerTileMinor>>>(
+										pX1->p_tri_corner_index,
+										pX1->p_tri_perinfo, 
+										pXusable->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+										pXusable->p_nT_neut_minor,
+										pXusable->p_nT_ion_minor,
+										pXusable->p_nT_elec_minor);
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXusable");
+		
+		printf("end");
 		while(1) getch();
 
 
@@ -2471,7 +2421,8 @@ void PerformCUDA_Advance_2 (
 				// we should prefer to combine with Get_Lap_phi routine.
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Advance_Antiadvect_phidot II");
-				
+			
+		pX2->evaltime = pXusable->evaltime + hstep*0.5;
 		
 		
 		// Document sequence with inputs labelled fully and showing where calc'd.

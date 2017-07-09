@@ -5856,8 +5856,6 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				vec_i -= h*0.5*moverM*omega_ce.cross(v_ion_k);		
 
 				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
-					
-				// OK UP TO HERE.
 				
 				vec_i +=
 					  h*qoverM*( //- grad_phi [[below]]
@@ -5867,8 +5865,6 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 					- h*0.5*(m_n/(m_ion+m_n))*nu_ni_MT_over_n*nT_neut_use.n*(v_ion_k-v_n_k-v_n_0)
 					- h*0.5*moverM*nu_ieBar*(v_ion_k-v_e_k);
 				
-				// THIS BIT GAVE RUBBISH.
-
 				if ((OUTPUT) && (index == REPORT)) printf("dAdt_kz/c  %1.5E  hc0.5 Lap_Az_half %1.5E \n"
 					"n_ion vx_ion_k - n_e vx_e_k %1.6E \n"
 					" n-i term x %1.6E\n"
@@ -6237,7 +6233,7 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			};
 						
 			// Effect of EzTuning:
-
+			
 			// Now we come to part of the routine where we have to record the effects of scaling the external Ez field.
 			// We want to record an aggregated total: Sum of z current = Iz0 + sigma_zz EzTuning.
 			{
@@ -6332,14 +6328,6 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			// We really should try putting writes outside braces.
 		}
 		
-
-
-
-		// Jeffrey do not worry yet about anything after this point.
-
-
-
-
 		if (b2ndPass == 0) {
 			// WE NO LONGER WANT TO DO THIS: No save-off of n,T on minor cells.
 
@@ -6468,9 +6456,19 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 		four_pi_over_c_J.x = 0.0;
 		four_pi_over_c_J.y = 0.0;
 		four_pi_over_c_J.z = 0.0;
-		if ((index >= ReverseJzIndexStart) && (index < ReverseJzIndexEnd))
-		{
+		
+		if (per_info.flag == REVERSE_JZ_TRI) {
+
+			// . Need to go through program and identify if there
+			// are times we test for OUT_OF_DOMAIN - think none.
+			
 			four_pi_over_c_J.z = four_pi_over_c_ReverseJz;
+			
+		};
+		
+	//	if ((index >= ReverseJzIndexStart) && (index < ReverseJzIndexEnd))
+		{
+			// This will no longer work -- we resequenced so they are out of order.
 		} 
 		
 		Vector3 Adot_plus = dAdt_k + h*c*c*(Lap_A_half + four_pi_over_c_J);
@@ -6525,13 +6523,13 @@ __global__ void Kernel_Heating_routine(
 		structural * __restrict__ p_info,
 		long * __restrict__ p_IndexTri,
 
-		nT * __restrict__ p_nT_neut_src,
+		nT * __restrict__ p_nT_neut_src, // major
 		nT * __restrict__ p_nT_ion_src,
 		nT * __restrict__ p_nT_elec_src,
-		nn * __restrict__ p_nn_ionrec,
+		nn * __restrict__ p_nn_ionrec,    // major
 		// If we want "use" then it comes in as the output variable.
 
-		f64_vec3 * __restrict__ p_B_major,
+		f64_vec3 * __restrict__ p_B_major,  // major
 
 	//	f64 * __restrict__ p_visccond_heatrate_neut,
 	//	f64 * __restrict__ p_visccond_heatrate_ion,
@@ -6539,14 +6537,14 @@ __global__ void Kernel_Heating_routine(
 		// We could get rid and use the central slots from the resistive heating.
 	
 		// Defined on minor:
-		f64 * __restrict__ p_resistive_heat_neut,
+		f64 * __restrict__ p_resistive_heat_neut, // minor
 		f64 * __restrict__ p_resistive_heat_ion,
 		f64 * __restrict__ p_resistive_heat_elec,  // to include inelastic frictional effects.
 		// What about ion-neutral frictional heating? Where was that included??
 	
-		f64 * __restrict__ p_area_cell,
+		f64 * __restrict__ p_area_cell, // major
 
-		nT * __restrict__ p_nT_neut_out,
+		nT * __restrict__ p_nT_neut_out, // major
 		nT * __restrict__ p_nT_ion_out,
 		nT * __restrict__ p_nT_elec_out,
 		bool b2ndPass // on '2ndpass', load nT_neut_use. 
@@ -6618,6 +6616,8 @@ __global__ void Kernel_Heating_routine(
 	n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
 
 
+	// worked with more commented.
+
 	niTi = (nT_ion_src.n-n_ionrec.n_recombine)*nT_ion_src.T 
 		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T;
 	
@@ -6629,9 +6629,6 @@ __global__ void Kernel_Heating_routine(
 		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T
 		  - n_ionrec.n_ionise*TWOTHIRDS*13.6*kB;	
 	
-	// WORKED WITH COMMENT HERE
-
-
 	if ((OUTPUT) && (index == REPORT)){
 			printf(
 				"Tsrc  %1.5E %1.5E %1.5E \n"
@@ -6665,10 +6662,10 @@ __global__ void Kernel_Heating_routine(
 //		niTi += h*p_visccond_heatrate_ion[index];
 //		neTe += h*p_visccond_heatrate_elec[index];
 	}
-
+	
 	// Now drag in the resistive heat rates INCLUDING its own central.
 	{
-		f64 neut_resistive, ion_resistive, elec_resistive;
+		f64 neut_resistive = 0.0, ion_resistive = 0.0, elec_resistive = 0.0;
 		long iTri;
 		for (iTri = 0; iTri < info.neigh_len; iTri++)
 		{
@@ -6688,18 +6685,18 @@ __global__ void Kernel_Heating_routine(
 		neut_resistive *= THIRD;
 		ion_resistive *= THIRD;
 		elec_resistive *= THIRD;
-
 		// Try __syncthreads here...
-
 		// Add the values for central cell:
 		neut_resistive += p_resistive_heat_neut[BEGINNING_OF_CENTRAL + index];
 		ion_resistive += p_resistive_heat_ion[BEGINNING_OF_CENTRAL + index];
 		elec_resistive += p_resistive_heat_elec[BEGINNING_OF_CENTRAL + index];
-		
 		nnTn += neut_resistive/area;
 		niTi += ion_resistive/area;
 		neTe += elec_resistive/area; // These were the additions to NT
 	}
+	
+	// NO CRASH IF PUT IT HERE.
+
 
 	// So we have now to collect things like:
 	// nu_eHeart, nu_eiBar :
@@ -6799,7 +6796,9 @@ __global__ void Kernel_Heating_routine(
 			printf("nT_after %1.5E %1.5E %1.5E \n",
 				nnTn,niTi,neTe);
 	};
-	
+	// END OF COMMENT
+
+
 	// Overwrite any old rubbish in memory so that we can save off the output:
 	nT_neut_use.n = n_n_plus;
 	nT_neut_use.T = nnTn/n_n_plus;
@@ -6819,7 +6818,8 @@ __global__ void Kernel_Heating_routine(
 	
 	//if ((OUTPUT) && (index == REPORT))
 	//	printf("Te %1.5E \n################\n",nT_elec_use.T);
-	
+	// */ this was the end of commenting
+
 	p_nT_neut_out[index] = nT_neut_use;
 	p_nT_ion_out[index] = nT_ion_use;
 	p_nT_elec_out[index] = nT_elec_use;

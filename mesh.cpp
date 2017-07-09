@@ -1332,10 +1332,16 @@ void TriMesh::ReconnectLastPointInDiscoArray()
 	// stored record of where to look for it
 	
 	Triangle * pTri, *pTri2, *pTriCopy, *pTriNeigh;
-		int BaseFlag;
-		real grad1, grad2;
-		int found,c1,c2,iApex,use;
-		Vector2 u[3];
+	int BaseFlag;
+	real grad1, grad2;
+	int found,c1,c2,iApex,use;
+	Vector2 u[3];
+
+	if ((pSeedTri->u8domain_flag == INNER_FRILL) || 
+		(pSeedTri->u8domain_flag == OUTER_FRILL))
+	{
+		pSeedTri = pSeedTri->neighbours[0];
+	}
 
 	// Get hold of two spare triangles:
 	long lentris = TriangleHeap.len;
@@ -1345,7 +1351,7 @@ void TriMesh::ReconnectLastPointInDiscoArray()
 		printf("fatal error, lentris < 2\n"); getch(); return;
 	}
 
-	if (pVert->flags < 3) {
+	if (pVert->flags < 3) { // MAGIC NUMBERS 
 	
 		// Check something:
 		if (pSeedTri->cornerptr[0] == 0)

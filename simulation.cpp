@@ -277,8 +277,16 @@ void TriMesh::InterpolateAFrom(TriMesh * pSrcMesh)
 			pVertex->A = pVertSrc->A;
 			pVertex->Adot = pVertSrc->Adot;
 		} else {
+			
+			Triangle * pSeedTri = pSrcMesh->T + pVertSrc->GiveMeAnIndex();
+		
+			if ((pSeedTri->u8domain_flag == INNER_FRILL) || 
+				(pSeedTri->u8domain_flag == OUTER_FRILL))
+			{
+				pSeedTri = pSeedTri->neighbours[0];
+			}
 			pTri = pSrcMesh->ReturnPointerToTriangleContainingPoint(
-				pSrcMesh->T + pVertSrc->GiveMeAnIndex(),
+				pSeedTri,
 				pVertex->pos.x,pVertex->pos.y
 				); 
 			// presumably this works best when pos is actually

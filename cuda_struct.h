@@ -9,7 +9,7 @@
 #include "vector_tensor.cu"
 #include <conio.h>
 
-#define MAXNEIGH    36  // large number needed to cater for links on aux mesh if we do not minimize connections.
+#define MAXNEIGH    42  // large number needed to cater for links on aux mesh if we do not minimize connections.
 #define MAXNEIGH_d  12
 
 // 12*32768*5 = 2MB .. just to keep things in perspective.
@@ -133,10 +133,10 @@ struct Systdata {
 	LONG3 * p_neigh_tri_index; // NOT CLEAR if we need
 	CHAR4 * p_tri_per_neigh;   // Not clear we need.
 
-	long Nverts,Ntris,Nminor;
+	long Nverts,Ntris,Nminor, numReverseJzTris;
 
 	bool bInvoked, bInvokedHost;
-	f64 EzTuning;
+	f64 EzTuning, evaltime; // each system is to have an evaltime now.
 
 	// HOST FUNCTIONS:
 	Systdata();
@@ -145,6 +145,9 @@ struct Systdata {
 	void Zero();
 	void ZeroHost();
 	void RevokeHost();
+	int Systdata::LoadHost(const char str[]);
+	int Systdata::SaveHost(const char str[]);
+	void Systdata::AsciiOutput (const char filename[]) const ;
 	~Systdata();
 };
 
@@ -156,9 +159,6 @@ void PerformCUDA_Advance_2 (
 		long numVerts,
 		const real hsub, 
 		const int numSubsteps,
-		long numStartZCurrentRow,
-		long numEndZCurrentRow,
-		const Systdata * pX_host_target,
-		f64 t // time of first timeslice
+		const Systdata * pX_host_target
 		);
 #endif
