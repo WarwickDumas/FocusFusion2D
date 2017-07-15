@@ -366,7 +366,7 @@ int Systdata::SaveHost(const char str[])
 	return 0;
 }
 
-int Systdata::LoadHost(const char str[])
+int Systdata::LoadHost(const char str[], bool bOverwriteRevJz)
 {
 	// fwrite is suited to flatpacks:
 	FILE * fp;
@@ -396,17 +396,19 @@ int Systdata::LoadHost(const char str[])
 		if (Ntris_file != Ntris) {
 			printf("Ntris_file %d Ntris %d\n",Ntris_file,Ntris);
 			getch();
-			return 1;
+			return 11;
 		};
 		if (Nminor_file != Nminor) {
 			printf("Nminor_file %d Nminor %d\n",Nminor_file,Nminor);
 			getch();
-			return 1;
+			return 10;
 		};
 		if (numRevJz_file != numReverseJzTris) {
 			printf("numRevJz_file %d ours %d\n",numRevJz_file,numReverseJzTris);
-			getch();
-			return 1;
+			if (bOverwriteRevJz == 0) {
+				getch();
+				return 100;
+			};
 		};
 
 		fread(&EzTuning, sizeof(f64),1,fp);
@@ -414,8 +416,6 @@ int Systdata::LoadHost(const char str[])
 		fread(&InnermostFrillCentroidRadius, sizeof(f64),1,fp);
 		fread(&OutermostFrillCentroidRadius, sizeof(f64),1,fp);
 		
-
-
 		// Data:
 		// =====
 		fread(p_phi,sizeof(f64),Nverts,fp);
