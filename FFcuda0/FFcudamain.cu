@@ -18,7 +18,7 @@ int main()
 	Syst1a.InvokeHost(NUMBER_OF_VERTICES_AIMED);
 	Syst2a.InvokeHost(NUMBER_OF_VERTICES_AIMED);
 	
-	Syst1a.LoadHost("testsyst.sdt");	
+	Syst1a.LoadHost("testsyst.sdt", true);	
 	
 	// . Call PerformAdvance:
 	// This expects systdata populated on host memory.
