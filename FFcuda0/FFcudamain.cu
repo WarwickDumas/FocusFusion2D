@@ -3,9 +3,10 @@
 #include "../cuda_struct.h"
 #include "device_launch_parameters.h"
 #include <stdio.h>
+#include "../FFxtubes.h"
 
 
-Systdata Syst1,Syst2;
+Systdata Syst1a,Syst2a;
 
 
 int main()
@@ -14,29 +15,27 @@ int main()
 
 	// . Load systdata
 
-	Syst1.InvokeHost(NUMBER_OF_VERTICES);
-	Syst2.InvokeHost(NUMBER_OF_VERTICES);
+	Syst1a.InvokeHost(NUMBER_OF_VERTICES_AIMED);
+	Syst2a.InvokeHost(NUMBER_OF_VERTICES_AIMED);
 	
-	Syst1.LoadHost("testsyst.sdt");	
+	Syst1a.LoadHost("testsyst.sdt");	
 	
 	// . Call PerformAdvance:
 	// This expects systdata populated on host memory.
 	
 	PerformCUDA_Advance_2 (
-		&Syst1, 
-		Syst1.Nverts,
+		&Syst1a, 
+		Syst1a.Nverts,
 		1e-13, 
 		10,
-		&Syst2,
-		f64 t // time of first timeslice
-		);
+		&Syst2a);
 	
-	Syst2.AsciiOutput("output.txt");
+	Syst2a.AsciiOutput("output.txt");
 	
 	printf("done.");
 	
-	Syst1.RevokeHost();
-	Syst2.RevokeHost();
+	Syst1a.RevokeHost();
+	Syst2a.RevokeHost();
 
 	getch();
 
