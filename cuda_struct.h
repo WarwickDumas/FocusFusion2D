@@ -146,7 +146,7 @@ struct Systdata {
 	void Zero();
 	void ZeroHost();
 	void RevokeHost();
-	int Systdata::LoadHost(const char str[]);
+	int Systdata::LoadHost(const char [], bool);
 	int Systdata::SaveHost(const char str[]);
 	void Systdata::AsciiOutput (const char filename[]) const ;
 	~Systdata();
