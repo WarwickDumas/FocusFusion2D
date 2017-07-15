@@ -10,9 +10,6 @@
 
 smartlong GlobalVertexScratchList;
 
-extern real FRILL_CENTROID_OUTER_RADIUS;
-extern real FRILL_CENTROID_INNER_RADIUS;
-
 //real const minimum_pressure_SD_at_1e18_sq = minimum_pressure_SD_at_1e18*minimum_pressure_SD_at_1e18;
 //real const min_variance_heat = min_SD_heat*min_SD_heat;
 
@@ -952,7 +949,7 @@ real Triangle::ReturnAngle(Vertex * pVertex)
 }
 
 
-Vector2 Triangle::RecalculateCentroid()
+Vector2 Triangle::RecalculateCentroid(real InnermostFrillCentroidRadius,real OutermostFrillCentroidRadius)
 {
 	Vector2 u[3];
 	MapLeftIfNecessary(u[0],u[1],u[2]);
@@ -965,11 +962,11 @@ Vector2 Triangle::RecalculateCentroid()
 	}
 	if (u8domain_flag == OUTER_FRILL) {
 		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU
-		temp.project_to_radius(cent, FRILL_CENTROID_OUTER_RADIUS);
+		temp.project_to_radius(cent, OutermostFrillCentroidRadius);
 	};
 	if (u8domain_flag == INNER_FRILL) {
 		Vector2 temp = 0.5*(u[0]+u[1]); // ? compare to GPU
-		temp.project_to_radius(cent, FRILL_CENTROID_INNER_RADIUS);
+		temp.project_to_radius(cent, InnermostFrillCentroidRadius);
 	};
 	return cent;
 }
@@ -997,7 +994,8 @@ void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids()
 	pTri = T;
 	for (iTri = 0; iTri < numTriangles; iTri++)
 	{
-		pTri->RecalculateCentroid();
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius);
 		++pTri; // this seems like it should still work if we have not wrapped any vertex that moved, even if tri no longer periodic in truth but some pts outside tranche
 	};
 

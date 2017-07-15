@@ -137,6 +137,7 @@ struct Systdata {
 
 	bool bInvoked, bInvokedHost;
 	f64 EzTuning, evaltime; // each system is to have an evaltime now.
+	f64 InnermostFrillCentroidRadius, OutermostFrillCentroidRadius;
 
 	// HOST FUNCTIONS:
 	Systdata();

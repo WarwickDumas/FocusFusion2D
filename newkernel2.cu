@@ -6458,7 +6458,6 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 		four_pi_over_c_J.z = 0.0;
 		
 		if (per_info.flag == REVERSE_JZ_TRI) {
-
 			// . Need to go through program and identify if there
 			// are times we test for OUT_OF_DOMAIN - think none.
 			

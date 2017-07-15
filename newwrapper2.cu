@@ -512,8 +512,8 @@ void PerformCUDA_Advance_2 (
 	// 2. __constant__. 
 	// global const is not even supposed to work for integers.
 	
-	Set_f64_constant(FRILL_CENTROID_OUTER_RADIUS_d,FRILL_CENTROID_OUTER_RADIUS);
-	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d,FRILL_CENTROID_INNER_RADIUS);
+	Set_f64_constant(FRILL_CENTROID_OUTER_RADIUS_d,Syst1.OutermostFrillCentroidRadius);
+	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d,Syst1.InnermostFrillCentroidRadius);
 	Set_f64_constant(sC,sC_); // ever used?
 	Set_f64_constant(kB,kB_);
 	Set_f64_constant(c,c_); // ever used? likely not
@@ -952,6 +952,96 @@ void PerformCUDA_Advance_2 (
 	};	
 	printf("Iz after areas %1.12E \n",Iz0);
 	getch();
+
+
+	// DEBUG  :
+	// ========
+
+	::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
+		(
+			pX1->p_tri_perinfo,
+			pX1->p_A, // update own, read others
+			pX1->p_tri_centroid,
+			pX1->p_neigh_tri_index
+		);
+
+	::Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor<<<numTriTiles, threadsPerTileMinor>>>
+		(
+			pX1->p_A,
+			pX1->p_A + BEGINNING_OF_CENTRAL,
+			pX1->p_info, // does this make it work ?
+			pX1->p_tri_centroid,
+			pX1->p_tri_perinfo,
+			pX1->p_tri_per_neigh,
+			pX1->p_tri_corner_index,
+			pX1->p_neigh_tri_index,
+			pX1->pIndexTri,
+			pX1->p_Lap_A,
+			pX1->p_Lap_A + BEGINNING_OF_CENTRAL,
+			pX1->p_B,
+			pX1->p_B + BEGINNING_OF_CENTRAL
+		);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute Lap A I");
+
+	::Kernel_Compute_grad_phi_Te_tris<<<numTriTiles, threadsPerTileMinor>>>
+		(
+		pX1->p_info,
+		pX1->p_phi,     // on majors
+		pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL, // on majors
+		pX1->p_tri_corner_index,
+		pX1->p_tri_perinfo,
+		pX1->p_grad_phi,
+		pX1->p_GradTe
+		);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute grad phi tri I");
+	
+	::Kernel_Compute_grad_phi_Te_centrals<<<numTilesMajor, threadsPerTileMajor>>>
+		(
+		pX1->p_info,
+		pX1->p_phi,
+		pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+		pX1->pIndexNeigh,
+		// output:
+		pX1->p_grad_phi + BEGINNING_OF_CENTRAL,
+		pX1->p_GradTe + BEGINNING_OF_CENTRAL
+		);
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Compute grad phi central I");
+	// CHECK PARAMETERS <<< >>> 
+			
+	// Get thermal pressure on each accelerating region...
+	// Better off probably to do the ionisation stage first, it will give a better idea
+	// of the half-time thermal pressure we are ultimately aiming for.
+	::Kernel_GetThermalPressureTris<<<numTriTiles,threadsPerTileMinor>>>
+		( 
+		pX1->p_info,			
+		pX1->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+		pX1->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+		pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+		pX1->p_tri_corner_index,
+		pX1->p_tri_perinfo,
+		p_MAR_neut,
+		p_MAR_ion,
+		p_MAR_elec
+		);
+	// So far it only works on DOMAIN_TRIANGLE, CROSSING_INS gets 0.
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure tris");
+	
+	Kernel_GetThermalPressureCentrals<<<numTilesMajor,threadsPerTileMajor>>>
+		(
+		pX1->p_info,
+		pX1->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+		pX1->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+		pX1->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+		pX1->pIndexNeigh,
+		p_MAR_neut + BEGINNING_OF_CENTRAL,
+		p_MAR_ion + BEGINNING_OF_CENTRAL,
+		p_MAR_elec + BEGINNING_OF_CENTRAL
+		); // works on DOMAIN_VERTEX only
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");
+	
+	printf("done GTPC\n");
+		
+	// End debug
 	
 	SendToHost(pX1, pX1, pX_host);
 	pX_host->AsciiOutput("inputs_pX1.txt");

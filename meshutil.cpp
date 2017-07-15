@@ -5,7 +5,6 @@
 
 #include "headers.h"
 
-real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 // include here only:
 
 #include "mesh.cpp" // will include "basics.cpp"
@@ -747,7 +746,7 @@ int TriMesh::Initialise(int token)
 	numVertices = 0;
 	
 	r = INNER_A_BOUNDARY;
-	FRILL_CENTROID_INNER_RADIUS = r - r_use1*0.5;
+	InnermostFrillCentroidRadius = r - r_use1*0.5;
 	
 	numRowprev = (int)(FULLANGLE*r/spacing)+1;
 	for (iRow = 0; iRow <= numRow1; iRow++)
@@ -832,7 +831,7 @@ int TriMesh::Initialise(int token)
 	
 	numRows = iRow; 	
 	Outermost_r_achieved = r-r_use3; // should now be DOMAIN_OUTER_RADIUS. 	
-	FRILL_CENTROID_OUTER_RADIUS = r - r_use3*0.5;
+	OutermostFrillCentroidRadius = r - r_use3*0.5;
 	// Used for Lap A calculating from A_frill but not for major area calc.
 	
 	// old:
@@ -1233,7 +1232,8 @@ int TriMesh::Initialise(int token)
 		// This is because we think the motion of a cell corner should
 		// be based on linear v, not move as the focus of a lens.
 		
-		pTri->RecalculateCentroid(); // for ins-crossing tri, lies in centre of insulator intersection.
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius); // for ins-crossing tri, lies in centre of insulator intersection.
 		
 		// Usually want false:
 		pTri->RecalculateEdgeNormalVectors(false); 
@@ -6602,8 +6602,12 @@ int TriMesh::Save(char * filename)
 	fwrite(&numRows,sizeof(long),1,fp); // don't ask me why
 	// also need to know that we have the correct mapping to coarse defined so save size of next level:
 	// fwrite(&numAuxVertices[0],sizeof(long),1,fp);
-	fwrite(&(EzTuning.x[0]),sizeof(double),1,fp);
 	fwrite(&numReverseJzTris,sizeof(long),1,fp);
+	
+	fwrite(&(EzTuning.x[0]),sizeof(double),1,fp);
+	
+	fwrite(&InnermostFrillCentroidRadius ,sizeof(double),1,fp);
+	fwrite(&OutermostFrillCentroidRadius ,sizeof(double),1,fp);
 	
 	// if those details will all match, hopefully the rest are guessed correctly from initialisation.
 	
@@ -6669,9 +6673,6 @@ int TriMesh::Load(char * filename)
 	read = fread(&file_numRows,sizeof(long),1,fp);
 	if (read != 1) {printf("3rror 4\n"); return 15;};
 
-	read = fread(&file_EzTuning,sizeof(double),1,fp);
-	if (read != 1) {printf("3rror 5\n"); return 16;};
-
 	read = fread(&file_numRevJz,sizeof(long),1,fp);
 	if (read != 1) {printf("3rror 5\n"); return 17;};
 //	read = fread(&file_numAuxVertices0,sizeof(long),1,fp);
@@ -6697,12 +6698,24 @@ int TriMesh::Load(char * filename)
 		return 1000000;
 		// Note that the number of triangles should be constant during the simulation.
 	};
+	
+	read = fread(&file_EzTuning,sizeof(double),1,fp);
+	if (read != 1) {printf("3rror 5\n"); return 16;};
+
 	this->EzTuning = file_EzTuning;
 	if (this->numReverseJzTris != file_numRevJz) {
 		printf("this->numReverseJzTris %d file_numRevJz %d \n",
 			this->numReverseJzTris, file_numRevJz);
 		return 120300;
 	};
+
+	read = fread(&InnermostFrillCentroidRadius ,sizeof(double),1,fp);
+	if (read != 1) {printf("3rror 33\n"); return 17;};
+
+	read = fread(&OutermostFrillCentroidRadius ,sizeof(double),1,fp);
+	if (read != 1) {printf("3rror 33\n"); return 18;};
+
+
 
 	// For each vertex: 
 	// position, triangles array, vector A, flags
@@ -6741,7 +6754,7 @@ int TriMesh::Load(char * filename)
 	{
 		pTri->area = pTri->GetArea();
 		pTri->RecalculateEdgeNormalVectors(false); 
-		pTri->RecalculateCentroid();
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,this->OutermostFrillCentroidRadius);
 		++pTri;
 	};
 	RefreshVertexNeighboursOfVerticesOrdered(); // does use tri centroids

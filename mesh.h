@@ -905,7 +905,7 @@ public:
 	int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & result);
 
 	void Triangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq);
-	Vector2 RecalculateCentroid();
+	Vector2 RecalculateCentroid(real InnermostFrillCentroidRadius,real OutermostFrillCentroidRadius);
 	Vector2 Triangle::GetContiguousCent_AssumingCentroidsSet(Vertex * pVertex);
 	real Triangle::ReturnAngle(Vertex * pVertex);
 
@@ -1122,9 +1122,10 @@ public:
 	// Full Delaunay on whole thing.
 	// Let tri cells cross the insulator;
 	// vertex cells are bounded at the edge by moving centroids to the centre of the intersection between cell and insulator.
-
+	
 	real Outermost_r_achieved; // outermost on finest level
 	real Innermost_r_achieved; // innermost on finest level
+	real InnermostFrillCentroidRadius, OutermostFrillCentroidRadius;
 	
 	real sum_of_coefficients;
 	// The following used for the Iz equation in ODE solve:

@@ -163,6 +163,45 @@ void Systdata::InvokeHost (long N){
 							getch(); }
 	};
 }
+
+void Systdata::RevokeHost() {
+	if (bInvokedHost) 
+	{
+		free(p_phi);
+		free(p_phidot);
+		free(p_A);
+		free(p_Adot);
+		free(p_nT_neut_minor);
+		free(p_nT_ion_minor);
+		free(p_nT_elec_minor);
+		free(p_v_neut);
+		free(p_v_ion);
+		free(p_v_elec);
+		free(p_MomAdditionRate_neut);
+		free(p_MomAdditionRate_ion);
+		free(p_MomAdditionRate_elec);
+		free(p_intercell_heatrate_neut);
+		free(p_intercell_heatrate_ion);
+		free(p_intercell_heatrate_elec);
+		free(p_area);
+		free(p_area_minor);
+		free(p_info);
+		free(p_tri_perinfo);
+		free(p_tri_per_neigh);
+		free(p_tri_corner_index);
+		free(p_neigh_tri_index);
+		free(pIndexNeigh);
+		free(pIndexTri);
+		free(pPBCneigh);
+		free(pPBCtri);
+	//	free(p_store_grad_phi);
+		free(p_B);
+	//	free(p_store_Lap_A);
+		free(p_GradTe);
+		free(p_v_overall);
+		free(p_tri_centroid);
+	}
+}
 //#endif
 
 //#ifdef __CUDACC__
@@ -274,8 +313,12 @@ int Systdata::SaveHost(const char str[])
 		fwrite(&Nminor,sizeof(long),1,fp);
 		fwrite(&numReverseJzTris,sizeof(long),1,fp);
 
+		fwrite(&EzTuning, sizeof(f64),1,fp);
 		fwrite(&evaltime, sizeof(f64),1,fp);
 
+		fwrite(&InnermostFrillCentroidRadius, sizeof(f64),1,fp);
+		fwrite(&OutermostFrillCentroidRadius, sizeof(f64),1,fp);
+		
 		// Data:
 		// =====
 		
@@ -366,7 +409,12 @@ int Systdata::LoadHost(const char str[])
 			return 1;
 		};
 
+		fread(&EzTuning, sizeof(f64),1,fp);
 		fread(&evaltime, sizeof(f64),1,fp);
+		fread(&InnermostFrillCentroidRadius, sizeof(f64),1,fp);
+		fread(&OutermostFrillCentroidRadius, sizeof(f64),1,fp);
+		
+
 
 		// Data:
 		// =====
@@ -471,42 +519,4 @@ Systdata::~Systdata() {
 	// This destructor will be different;
 	// It cannot exist for the host object.
 
-void Systdata::RevokeHost() {
-	if (bInvokedHost) 
-	{
-		free(p_phi);
-		free(p_phidot);
-		free(p_A);
-		free(p_Adot);
-		free(p_nT_neut_minor);
-		free(p_nT_ion_minor);
-		free(p_nT_elec_minor);
-		free(p_v_neut);
-		free(p_v_ion);
-		free(p_v_elec);
-		free(p_MomAdditionRate_neut);
-		free(p_MomAdditionRate_ion);
-		free(p_MomAdditionRate_elec);
-		free(p_intercell_heatrate_neut);
-		free(p_intercell_heatrate_ion);
-		free(p_intercell_heatrate_elec);
-		free(p_area);
-		free(p_area_minor);
-		free(p_info);
-		free(p_tri_perinfo);
-		free(p_tri_per_neigh);
-		free(p_tri_corner_index);
-		free(p_neigh_tri_index);
-		free(pIndexNeigh);
-		free(pIndexTri);
-		free(pPBCneigh);
-		free(pPBCtri);
-	//	free(p_store_grad_phi);
-		free(p_B);
-	//	free(p_store_Lap_A);
-		free(p_GradTe);
-		free(p_v_overall);
-		free(p_tri_centroid);
-	}
-}
 #endif

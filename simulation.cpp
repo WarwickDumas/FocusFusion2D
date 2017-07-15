@@ -405,7 +405,8 @@ void TriMesh::GetBFromA()
 	pTri = T;
 	for (iTri = 0; iTri < numTriangles; iTri++)
 	{
-		pTri->RecalculateCentroid();   // THIS SHOULD BE UNNECESSARY
+		pTri->RecalculateCentroid(this->InnermostFrillCentroidRadius,
+			this->OutermostFrillCentroidRadius);
 		++pTri;
 	};
 

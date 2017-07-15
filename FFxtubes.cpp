@@ -39,7 +39,6 @@
 // Global variables:
 // =================
 
-extern real FRILL_CENTROID_OUTER_RADIUS, FRILL_CENTROID_INNER_RADIUS;
 float xzscale;
 
 bool bCullNone = false;
@@ -1916,6 +1915,11 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 	long i;
 	long iVertex;
 	real IzAttained1 = 0.0, IzAttained2 = 0.0;
+	
+	pSystdata->EzTuning = this->EzTuning.x[0];
+	pSystdata->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pSystdata->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	
 	Vertex * pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{
@@ -1927,8 +1931,6 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		pSystdata->p_A[iVertex + BEGINNING_OF_CENTRAL] = pVertex->A;
 		pSystdata->p_Adot[iVertex + BEGINNING_OF_CENTRAL] = pVertex->Adot;
 		pSystdata->p_B[iVertex + BEGINNING_OF_CENTRAL] = pVertex->B;
-		
-		pSystdata->EzTuning = this->EzTuning.x[0];
 		
 		pSystdata->p_nT_neut_minor[iVertex + BEGINNING_OF_CENTRAL].n = pVertex->Neut.mass/pVertex->AreaCell;
 		pSystdata->p_nT_neut_minor[iVertex + BEGINNING_OF_CENTRAL].T = pVertex->Neut.heat/pVertex->Neut.mass;
@@ -2044,6 +2046,12 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 	long iTri;
 	for (iTri = 0; iTri < numTriangles; iTri++)
 	{
+
+		// What is definition of cornerptr at the frills etc?
+
+		// Need to get those right.
+		// **
+
 		A0 = pTri->cornerptr[0]->A;
 		A1 = pTri->cornerptr[1]->A;
 		A2 = pTri->cornerptr[2]->A;
@@ -2124,8 +2132,79 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 				};
 			};
 		}
+
+		// Now we do not want to get a wrong B field by doubling what Lap A we get
+		// at each vertex, which is what happens if we just interpolate A_tri here from A0,A1,A2.
+
+		// Instead seek to solve Lap A + 4pi/c J = 0 using the 3 corners to create Lap.
+		// Assume from centroid we look towards each corner of triangle and create normal
+		// edges which then meet.
+		// 
+
 		pSystdata->p_A[iTri] = THIRD*(A0+A1+A2);
+
+		pTri->nT = pSystdata->p_A[iTri].z;// STORE FOR NEXT ITERATION.
+
+		//pSystdata->p_A[iTri].x = THIRD*(A0+A1+A2).x;
+		//pSystdata->p_A[iTri].y = THIRD*(A0+A1+A2).y;
+
+		// Best idea:
+
+		// At circumcenter we can draw a circle through the directions to each corner, passing through
+		// the halfway point towards each one. We can then estimate Lap A for the circle by assuming that
+		// the angles are split up linearly.
+		// Assume Jz at circumcenter is as triangle suggests Jz.
+		// Then we can take for centroid, an inverse-distance-weighted average of the 4 points.
+		// USUALLY the cent will be near the cc.
+
+		// If we go from anything not the circumcenter then it's hard to win.
+		// If we assume that the deriv is set just anywhere on the line between points, then
+		// we are ignoring the 2nd deriv which is what we set out to estimate.
+		// Doing that way you could put all ests close to the centre and get indefinitely high 
+		// Laplacian.
+		// So we have to put deriv only on the line between and at halfway. Then it will beg
+		// the question what sort of shape we have by continuation of the normal lines.
+		// We can form a triangle this way but this is calculation-heavy and if it's a long 
+		// triangle then it's not obvious visually why this is good.
+		// OTOH calculating the cc we have done many times.
+
+		// . Calculate cc
+		
+		// . Calculate 4pi/c Jz for tri
+		
+		// . Lap Az (cc) = 2 pi r (avg dA/dr) / pi r ^2 = 2 (avg dA/dr)/r
+		// = 2 sum [ wt_i (A_i-A_cc)/(2r)]  / r
+		// r = half distance from cc to corner. 
+	// For near-equilateral, the estimate will be very sensible. For near right-angled,
+		// it is less obvious. But if we instead went from centroid, 
+
+		// DIFFERENT IDEA
+		// ===============
+
+		// Use standard 6-way Laplacian for tri minor. Use tri values initially set from
+		// linear interpolation. Can repeat several Jacobi iterations.
+		// Look at kernel code to see how to handle getting gradient over each of 6 edges.
+
+		// Set pSystdata->p_A[iTri].z = s.t. Lap Az = -4pi/c Jz
+
+
+		// THEN:
+
+		// Aren't we supposed to put a ratio to create Adot.
+
+
+		// NOTE:
+
+		// We are assuming this only runs for the initial system.
+		// We'll need to avoid doing it subsequently.
+		// That is annoying.
+		// We def do not want to lose A_tri because of having to do a Delaunay flip.
+		
+		// .................................................................................
+
+		
 		pSystdata->p_Adot[iTri] = THIRD*(Adot0+Adot1+Adot2);
+
 		pSystdata->p_B[iTri] = THIRD*(B0+B1+B2);
 		
 		if (pSystdata->p_Adot[iTri].x != 0.0) {
@@ -2242,8 +2321,255 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		
 		++pTri;
 	}
-	
 
+
+	f64_vec2 edgenormal,u0,u1,u2,pos0,pos1,pos2,ourpos;
+	f64 A0z, A1z, A2z,A0neigh,A1neigh,A2neigh;
+	for (int dfdfdf = 0; dfdfdf < 3; dfdfdf++)
+	{
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			A0z = pTri->cornerptr[0]->A.z;
+			A1z = pTri->cornerptr[1]->A.z;
+			A2z = pTri->cornerptr[2]->A.z;		
+			
+			pos0 = pTri->cornerptr[0]->pos;
+			pos1 = pTri->cornerptr[1]->pos;
+			pos2 = pTri->cornerptr[2]->pos;
+			u0 = pTri->neighbours[0]->cent;
+			u1 = pTri->neighbours[1]->cent;
+			u2 = pTri->neighbours[2]->cent;
+			ourpos = pTri->cent;
+
+			// Also acquire Az for tri neighbours:
+			A0neigh = pTri->neighbours[0]->nT;
+			A1neigh = pTri->neighbours[1]->nT;
+			A2neigh = pTri->neighbours[2]->nT;
+			
+			if (pTri->periodic == 0) {
+				// do nothing		
+			} else {
+				if (pTri->periodic == 1) {
+					int o1 = pTri->GetLeftmostIndex(); 
+					if (o1 != 0){
+						pos0 = Anticlockwise*pos0;
+					}
+					if (o1 != 1) {
+						pos1 = Anticlockwise*pos1;
+					}
+					if (o1 != 2) {
+						pos2 = Anticlockwise*pos2;
+					};
+				} else {
+					int o1 = pTri->GetRightmostIndex(); 
+					if (o1 == 0){
+						pos0 = Anticlockwise*pos0;
+					}
+					if (o1 == 1) {
+						pos1 = Anticlockwise*pos1;
+					}
+					if (o1 == 2) {
+						pos2 = Anticlockwise*pos2;
+					};
+				};
+			}
+			
+			if (ourpos.x > 0.0) 
+			{
+				if (pTri->neighbours[0]->periodic != 0)
+					u0 = Clockwise*u0;
+				if (pTri->neighbours[1]->periodic != 0)
+					u1 = Clockwise*u1;
+				if (pTri->neighbours[2]->periodic != 0)
+					u2 = Clockwise*u2;
+			} else {
+				if (pTri->periodic != 0)
+				{
+					if (u0.x > 0.0) u0 = Anticlockwise*u0;
+					if (u1.x > 0.0) u1 = Anticlockwise*u1;
+					if (u2.x > 0.0) u2 = Anticlockwise*u2;
+				};
+			};
+			// Okay got em
+			
+			f64 LapAz = 0.0, LapAz_self = 0.0, area = 0.0;
+
+			f64 shoelace = (ourpos.x-u0.x)*(pos1.y-pos2.y)
+						 + (pos1.x-pos2.x)*(u0.y-ourpos.y); 
+			
+			edgenormal.x = (pos1.y-pos2.y)*0.333333333333333;
+			edgenormal.y = (pos2.x-pos1.x)*0.333333333333333;
+			if (edgenormal.dot(pos0-pos1) > 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+
+			f64 coeff = ((pos1.y-pos2.y)*edgenormal.x +
+						 (pos2.x-pos1.x)*edgenormal.y)/shoelace;
+			//LapAz += coeff*(A0.z-A_out.z);
+			LapAz += coeff*(-A0neigh);
+			LapAz_self += coeff;
+			
+			coeff = ((u0.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-u0.x)*edgenormal.y)/shoelace; // from top line same
+			LapAz += coeff*(A1z-A2z);
+			
+			area += 0.333333333333333*(0.5*(pos1.x+pos2.x)+ourpos.x+u0.x)*edgenormal.x;
+			
+			// == 
+
+			shoelace = (ourpos.x-pos2.x)*(u0.y-u1.y)
+					 + (u0.x-u1.x)*(pos2.y-ourpos.y);
+			edgenormal.x = 0.333333333333333*(pos0.y-pos1.y);
+			edgenormal.y = 0.333333333333333*(pos1.x-pos0.x); // cut off 1/3 of the edge
+			if (edgenormal.dot(pos2-pos1) < 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+			coeff = ((u0.y-u1.y)*edgenormal.x +
+					 (u1.x-u0.x)*edgenormal.y)/shoelace;  
+			//LapAz += coeff*(A0.z-A_out.z);
+			LapAz += coeff*(-A2z);
+			LapAz_self += coeff*A0.z;
+
+			coeff = ((pos2.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-pos2.x)*edgenormal.y)/shoelace;
+			LapAz += coeff*(A0neigh-A1neigh);
+			area += 0.333333333333333*(0.5*(u0.x+u1.x)+ourpos.x+pos2.x)*edgenormal.x;
+			
+			// ==
+
+			shoelace = (ourpos.x-u1.x)*(pos2.y-pos0.y) // clock.y-anti.y
+					 + (pos2.x-pos0.x)*(u1.y-ourpos.y); 
+			edgenormal.x = 0.333333333333333*(pos0.y-pos2.y);
+			edgenormal.y = 0.333333333333333*(pos2.x-pos0.x); // cut off 1/3 of the edge
+			if (edgenormal.dot(pos1-pos0) > 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+			coeff = ((pos2.y-pos0.y)*edgenormal.x +
+					 (pos0.x-pos2.x)*edgenormal.y)/shoelace;
+			//LapA.z += coeff*(A0.z-A_out.z);
+			LapAz += coeff*(-A1neigh);
+			LapAz_self += coeff;
+			
+			coeff = ((u1.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-u1.x)*edgenormal.y)/shoelace;
+			LapAz += coeff*(A2z-A0z);
+
+			area += 0.333333333333333*(0.5*(pos2.x+pos0.x)+ourpos.x+u1.x)*edgenormal.x;
+
+			// ==
+			// A_2 is now to point at tri neigh 2
+
+			shoelace = (ourpos.x-pos0.x)*(u1.y-u2.y) // clock.y-anti.y
+					 + (u1.x-u2.x)*(pos0.y-ourpos.y); 
+			edgenormal.x = 0.333333333333333*(pos1.y-pos2.y);
+			edgenormal.y = 0.333333333333333*(pos2.x-pos1.x); // cut off 1/3 of the edge
+			if (edgenormal.dot(pos0-pos1) < 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+			coeff = ((u1.y-u2.y)*edgenormal.x +
+					 (u2.x-u1.x)*edgenormal.y)/shoelace;
+
+			//LapA.z += coeff*(A0.z-A_out.z);
+			LapAz += coeff*(-A0z);
+			LapAz_self += coeff;
+			
+			coeff = ((pos0.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-pos0.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+			LapAz += coeff*(A1neigh-A2neigh);
+			
+			area += THIRD*(0.5*(u2.x+u1.x)+ourpos.x+pos0.x)*edgenormal.x;
+
+			// ==
+			// A2 to be for corner 1
+
+			shoelace = (ourpos.x-u2.x)*(pos0.y-pos1.y) // clock.y-anti.y
+					 + (pos0.x-pos1.x)*(u2.y-ourpos.y); 
+			edgenormal.x = 0.333333333333333*(pos1.y-pos0.y);
+			edgenormal.y = 0.333333333333333*(pos0.x-pos1.x); // cut off 1/3 of the edge
+			if (edgenormal.dot(pos2-pos1) > 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+			coeff = ((pos0.y-pos1.y)*edgenormal.x +
+					 (pos1.x-pos0.x)*edgenormal.y)/shoelace; // see coeffs on ourpos in shoelace
+			LapAz += coeff*(-A2neigh);
+			LapAz_self += coeff;
+			
+			coeff = ((u2.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-u2.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+			LapAz += coeff*(A0z-A1z);
+
+			area += 0.333333333333333*(0.5*(pos0.x+pos1.x)+ourpos.x+u2.x)*edgenormal.x;
+
+			// ==
+			// A2 to be for tri 0
+			
+			shoelace = (ourpos.x-pos1.x)*(u2.y-u0.y) // clock.y-anti.y
+					 + (u2.x-u0.x)*(pos1.y-ourpos.y); 
+			edgenormal.x = 0.333333333333333*(pos2.y-pos0.y);
+			edgenormal.y = 0.333333333333333*(pos0.x-pos2.x); // cut off 1/3 of the edge
+			if (edgenormal.dot(pos1-pos2) < 0.0) {
+				edgenormal.x = -edgenormal.x;
+				edgenormal.y = -edgenormal.y;    
+			};
+			coeff = ((u2.y-u0.y)*edgenormal.x +
+					 (u0.x-u2.x)*edgenormal.y)/shoelace; // see coeffs on ourpos in shoelace
+			LapAz += coeff*(-A1z);
+			LapAz_self += coeff;
+			
+			coeff = ((pos1.y-ourpos.y)*edgenormal.x +
+					 (ourpos.x-pos1.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+			LapAz += coeff*(A2neigh-A0neigh);
+			
+			area += 0.333333333333333*(0.5*(u0.x+u2.x)+ourpos.x+pos1.x)*edgenormal.x;
+			
+			// ==
+
+			LapAz /= area;
+			LapAz_self /= area;
+
+			// Now get -4pi/c Jz
+			f64 minus4piovercJz = -FOURPIOVERC*q*(pSystdata->p_v_ion[iTri].z*pSystdata->p_nT_ion_minor[iTri].n 
+								- pSystdata->p_v_elec[iTri].z*pSystdata->p_nT_elec_minor[iTri].n );
+			
+			// lap_az_self * Az + LapAz = -4pi/c Jz
+			pSystdata->p_A[iTri].z = (minus4piovercJz-LapAz)/LapAz_self;
+			
+
+			if ((iTri > 26512) && (iTri < 26516)) {
+				printf("%d minus4piovercJz %1.8E  Lap %1.8E \n",
+					iTri,minus4piovercJz, LapAz + LapAz_self*pSystdata->p_A[iTri].z);
+			};
+
+			++pTri;
+		}
+		
+		// GO AGAIN:
+		// Push this data into tris->nT
+		// Then repeat the same iteration.
+
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			pTri->nT = pSystdata->p_A[iTri].z;
+			pSystdata->p_Adot[iTri].z = GlobalIzElasticity*pSystdata->p_A[iTri].z;
+			++pTri;
+		}
+	}; // 3 repeats
+
+	printf("GlobalIzElasticity used: %1.5E \n",GlobalIzElasticity);
+
+	// Hopefully a better result than just interpolating A.
+
+	// All this so that we can initialise without having to write an all-new solver
+	// that works on minors to find Az.
+
+		// vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!vv!
 
 		// But here we see a problem. We will need the CPU storage structure to match the GPU one.
 
@@ -2264,22 +2590,22 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		// So there's no way round this. Since we are doing offset, we need the offset data
 		// to be what is subject to flips.
 
-		// ^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^
+		// ^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!^^!
 
 
 		// Well, what to actually do about that.
-
+		
 		// It means basically then that here on CPU, we want Systdata to be alive. But to 
 		// make the transition to that arrangement,
 		// we need to be populating System from Systdata to do graphics.
-
+		
 		// Therefore this routine will be called only once, having initialized a System.
 		// Once the Systdata gets populated and is in use, we do maintenance on Systdata,
 		// and transferring data to a System is only for display, -- for now until I can get rid of it.
 		
 		// Of course, Systdata has a large burden of structural (duplicated) data members.
 				
-
+	
 	printf("20000: flag %d phi %1.10E Adot.z %1.10E\n",
 		pSystdata->p_info[20000].flag,pSystdata->p_phi[20000],pSystdata->p_Adot[20000].z);
 

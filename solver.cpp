@@ -1104,9 +1104,6 @@ void TriMesh::CreateODECoefficientsAz(bool bInitial)
 				// HMM. What to do about that?
 				// Use position here?
 
-				// Am I just a bunny?
-
-
 				for (iii = 1; iii < 4; iii++)
 					edgenorm_use[iii] = edge_normal;
 				
@@ -1173,7 +1170,6 @@ void TriMesh::CreateODECoefficientsAz(bool bInitial)
 				Lapcontrib_inext = grad[1].dot(edge_normal);
 				Lapcontrib_i = grad[2].dot(edge_normal);
 				Lapcontrib_iprev = grad[3].dot(edge_normal);
-
 
 				// We are not going to need to get grad.
 				// We only need Lap Az + 4pi/c Jz = 0; Jz = sigma_zz (Ez_circuit - Adotz/c)
