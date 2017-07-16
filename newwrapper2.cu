@@ -212,7 +212,7 @@ __device__ f64_vec2 * p_grad_phidot;
 __device__ f64_vec3 * p_MAR_neut, * p_MAR_ion, * p_MAR_elec;
 __device__ nn *p_nn_ionrec_minor;
 
-#include "E:/focusfusion/FFxtubes/helpers.cu"
+#include "./helpers.cu"
 
 #define Set_f64_constant(dest, src) { \
 		Call(cudaGetSymbolAddress((void **)(&f64address), dest ), \
