@@ -111,6 +111,7 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
+				Arch1="0"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
