@@ -1,0 +1,20 @@
+Instructions on Compiling on windows 7 with Visual Studio 2008
+1)Make sure to install visual studio 2008 express C++. You can get the installer from http://download.microsoft.com/download/A/5/4/A54BADB6-9C3F-478D-8657-93B3FC9FE62D/vcsetup.exe
+2)Install cuda toolbox v5 cuda_5.0.35_winvista_win7_win8_general_32-3.msi should be able to find the the installer on google
+3)Copy the files from C:\Program Files (x86)\NVIDIA GPU Computing Toolkit\CUDA\v5.0\extras\visual_studio_integration\rules into C:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\VCProjectDefaults
+4)Open the solution file FFcuda0.sln with visual studio 2008
+5)Try rebuilding the project for release. In case you get an error try changing the project properties (right click on project->properties) then Configuration Properties->CUDA Runtime API->GPU and change GPU Architecture (1) from sm_10 to 0 . In case project properties dont open try unloading and reloading the project (probably SP1 for VS2008 would fix that)
+6)Once you compile it, you can unpack from testsyst.7z, testsyst.sdt into Release directory and run FFcuda0.exe which should generate similar output:
+Systdata::InvokeHost N 36864
+Dimensioned for MAXNEIGH_d = 12
+Systdata::InvokeHost N 36864
+Dimensioned for MAXNEIGH_d = 12
+ testsyst.sdt opened to read
+numRevJz_file 237 ours 0
+testsyst.sdt closed
+pXhost->p_Adot[20000 + BEGINNING_OF_CENTRAL].z -1.4094034779E+008
+sizeof(CHAR4): 4
+sizeof(structural): 24
+sizeof(LONG3): 12
+sizeof(nn): 16
+Presing enter should continue execution or you can kill process to stop it
