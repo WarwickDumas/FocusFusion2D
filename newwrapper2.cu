@@ -212,7 +212,7 @@ __device__ f64_vec2 * p_grad_phidot;
 __device__ f64_vec3 * p_MAR_neut, * p_MAR_ion, * p_MAR_elec;
 __device__ nn *p_nn_ionrec_minor;
 
-#include "./helpers.cu"
+#include "E:/focusfusion/FFxtubes/helpers.cu"
 
 #define Set_f64_constant(dest, src) { \
 		Call(cudaGetSymbolAddress((void **)(&f64address), dest ), \
@@ -284,13 +284,13 @@ void Systdata::AsciiOutput (const char filename[]) const
 	//	cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
 	//	sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
 		
-		printf("%d ",iMinor);
+		if (iMinor % 500 == 0) printf("%d ",iMinor);
 		
 		int flag;
 		if (iMinor < BEGINNING_OF_CENTRAL) {
 			flag = this->p_tri_perinfo[iMinor].flag;
 		} else {
-			flag = this->p_info[iMinor].flag;
+			flag = this->p_info[iMinor-BEGINNING_OF_CENTRAL].flag;
 		};
 
 		fprintf(file,"%d %d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
@@ -512,8 +512,8 @@ void PerformCUDA_Advance_2 (
 	// 2. __constant__. 
 	// global const is not even supposed to work for integers.
 	
-	Set_f64_constant(FRILL_CENTROID_OUTER_RADIUS_d,Syst1.OutermostFrillCentroidRadius);
-	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d,Syst1.InnermostFrillCentroidRadius);
+	Set_f64_constant(FRILL_CENTROID_OUTER_RADIUS_d,pX_host->OutermostFrillCentroidRadius);
+	Set_f64_constant(FRILL_CENTROID_INNER_RADIUS_d,pX_host->InnermostFrillCentroidRadius);
 	Set_f64_constant(sC,sC_); // ever used?
 	Set_f64_constant(kB,kB_);
 	Set_f64_constant(c,c_); // ever used? likely not
@@ -628,6 +628,15 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Syst1.p_area, pX_host->p_area, numVertices*sizeof(f64), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_area_minor, pX_host->p_area_minor, Syst1.Nminor*sizeof(f64), cudaMemcpyHostToDevice));
 		
+	Syst1.InnermostFrillCentroidRadius = pX_host->InnermostFrillCentroidRadius;
+	Syst1.OutermostFrillCentroidRadius = pX_host->OutermostFrillCentroidRadius;
+	Systhalf.InnermostFrillCentroidRadius = Syst1.InnermostFrillCentroidRadius;
+	Systhalf.OutermostFrillCentroidRadius = Syst1.OutermostFrillCentroidRadius;
+	Syst2.InnermostFrillCentroidRadius = Syst1.InnermostFrillCentroidRadius;
+	Syst2.OutermostFrillCentroidRadius = Syst1.OutermostFrillCentroidRadius;
+	SystAdv.InnermostFrillCentroidRadius = Syst1.InnermostFrillCentroidRadius;
+	SystAdv.OutermostFrillCentroidRadius = Syst1.OutermostFrillCentroidRadius;
+
 	Syst1.EzTuning = pX_host->EzTuning; // fail?
 		
 	printf("Syst1.Ez %1.9E pX_host Ez %1.9E \n",
@@ -795,6 +804,7 @@ void PerformCUDA_Advance_2 (
 		(
 			pX1->p_info,
 			k1,k2,
+			V,
 			pX1->p_phi
 		);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize InitialisePhi.");
@@ -1202,7 +1212,9 @@ void PerformCUDA_Advance_2 (
 		// sets == 0 outside of DOMAIN_VERTEX
 		
 		f64 Vhalf = pX1->EzTuning*3.5*(GetIzPrescribed(thalf)/GetIzPrescribed(t));
-		printf("EzTuning = %1.5E , V = %1.5E \n",pX1->EzTuning,Vhalf);	// guesstimate 
+		printf("EzTuning = %1.5E , V = %1.15E Vhalf = %1.15E \n",pX1->EzTuning,V,Vhalf);	// guesstimate 
+
+		getch();
 
 		Kernel_Advance_Antiadvect_phi<<<numTilesMajor,threadsPerTileMajor>>>
 			(

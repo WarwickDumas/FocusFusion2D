@@ -176,6 +176,8 @@ __global__ void Kernel_CalculateTriMinorAreas_AndCentroids
 		f64_vec2 temp = 0.5*(pos1+pos2); 
 		temp.project_to_radius(centroid, FRILL_CENTROID_OUTER_RADIUS_d);
 		area = 1.0e-14; // == 0 but tiny is less likely to cause 1/0
+	//	printf("%d %1.5E %1.5E .. %1.5E %1.5E \n",tid,temp.x,temp.y,
+	//		centroid.x,centroid.y);
 	}
 	
 	if (perinfo.flag == INNER_FRILL)
@@ -326,6 +328,9 @@ __global__ void Kernel_CalculateMajorAreas (
 	__shared__ long Indextri[MAXNEIGH_d*threadsPerTileMajor];
 	__shared__ char PBCtri[MAXNEIGH_d*threadsPerTileMajor];
 	
+	// Major areas are used for rel advect (comp htg), ionisation, heating.
+
+
 	long StartMinor = blockIdx.x*SIZE_OF_TRI_TILE_FOR_MAJOR; // Have to do this way.
 	
 	shared_centroids[threadIdx.x] = 
@@ -414,6 +419,10 @@ __global__ void Kernel_CalculateMajorAreas (
 
 		// Also we project frill centroid on to the inner/outer radius.
 		
+
+		// AFAICS this is NOT USED ANYWAY -- 
+
+
 		long indextri = Indextri[MAXNEIGH_d*threadIdx.x + info.neigh_len];
 		if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
 			uprev = shared_centroids[indextri-StartMinor];
@@ -455,50 +464,62 @@ __global__ void Kernel_CalculateMajorAreas (
 	};
 	
 	p_area[index] = grad_x_integrated_x;
-	/*if ((index == 36685)) {
+	if ((index == 36685)) {
 		printf("index %d flag %d area %1.3E \n",
 			index, info.flag, grad_x_integrated_x);
 		
-		long indextri = Indextri[MAXNEIGH_d*threadIdx.x + info.neigh_len-1];
+		long indextri = Indextri[MAXNEIGH_d*threadIdx.x + info.neigh_len];
 		if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
 			uprev = shared_centroids[indextri-StartMinor];
 		} else {
 			uprev = p_tri_centroid[indextri];
 		}
-		char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + info.neigh_len-1];
-		if (PBC == NEEDS_CLOCK) {
-			uprev = Clockwise_rotate2(uprev);
-		}
-		if (PBC == NEEDS_ANTI) {
-			uprev = Anticlock_rotate2(uprev);
-		}
-		//printf("uprev %1.5E %1.5E ... %1.5E\n",uprev.x,uprev.y,uprev.modulus());
+		if (uprev.x*uprev.x + uprev.y*uprev.y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+		{
+			// This is not what happens. centroid is #IND I think.
+			printf("uprev before %1.5E %1.5E \nDOR %1.5E mod %1.5E\n",uprev.x,uprev.y,
+				DOMAIN_OUTER_RADIUS,uprev.modulus());
+			uprev.project_to_radius(uprev,DOMAIN_OUTER_RADIUS);
+			printf("uprev after %1.6E %1.6E \n",uprev.x,uprev.y);
+		};
+		if (uprev.x*uprev.x + uprev.y*uprev.y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+			uprev.project_to_radius(uprev,INNER_A_BOUNDARY);
+		char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + info.neigh_len];
+		if (PBC == NEEDS_CLOCK) uprev = Clockwise_rotate2(uprev);
+		if (PBC == NEEDS_ANTI) uprev = Anticlock_rotate2(uprev);
+			
+		printf("uprev %1.5E %1.5E ... %1.5E\n",uprev.x,uprev.y,uprev.modulus());
 		short iNeigh;
-		for (iNeigh = 0; iNeigh < info.neigh_len; iNeigh++) // iNeigh is the anticlockwise one
+		for (iNeigh = 0; iNeigh < info.neigh_len+1; iNeigh++) // iNeigh is the anticlockwise one
 		{
 			indextri = Indextri[MAXNEIGH_d*threadIdx.x + iNeigh];
 			if ((indextri >= StartMinor) && (indextri < StartMinor + SIZE_OF_TRI_TILE_FOR_MAJOR)) {
 				unext = shared_centroids[indextri-StartMinor];
 			} else {
 				unext = p_tri_centroid[indextri];
-			}
+			}			
+			if (unext.x*unext.x + unext.y*unext.y > DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS)
+				unext.project_to_radius(unext,DOMAIN_OUTER_RADIUS);
+			if (unext.x*unext.x + unext.y*unext.y < INNER_A_BOUNDARY*INNER_A_BOUNDARY)
+				unext.project_to_radius(unext,INNER_A_BOUNDARY);
+			
 			char PBC = PBCtri[threadIdx.x*MAXNEIGH_d + iNeigh];
-			if (PBC == NEEDS_CLOCK) {
-				unext = Clockwise_rotate2(unext);
-			}
-			if (PBC == NEEDS_ANTI) {
-				unext = Anticlock_rotate2(unext);
-			}	
+			if (PBC == NEEDS_CLOCK) unext = Clockwise_rotate2(unext);
+			if (PBC == NEEDS_ANTI) unext = Anticlock_rotate2(unext);
+						
+			grad_x_integrated_x += 0.5*(unext.x+uprev.x)*(unext.y-uprev.y);
 			
-		//	printf("unext %1.5E %1.5E ... %1.5E \n",unext.x,unext.y,unext.modulus());
+			printf("unext %1.5E %1.5E ... %1.5E area %1.5E \n",unext.x,unext.y,unext.modulus(),
+				grad_x_integrated_x);
 			
-			// Get edge_normal.x and average x on edge
-			grad_x_integrated_x += //0.5*(unext.x+uprev.x)*edge_normal.x
-									0.5*(unext.x+uprev.x)*(unext.y-uprev.y);
+			// We do have to even count the edge looking into frills, or polygon
+			// area would not be right.			
 			uprev = unext;
+			
+			
 		};
 		
-	};*/
+	};
 }
 
 
@@ -2636,6 +2657,14 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		}
 
 
+		if (index == 73250)
+		{
+			printf("u0 1 2 %1.6E %1.6E ,  %1.6E %1.6E ,  %1.6E %1.6E \n",
+					u0.x,u0.y,u1.x,u1.y,u2.x,u2.y);
+			printf("pos0 1 2  %1.6E %1.6E ,  %1.6E %1.6E ,  %1.6E %1.6E \n",
+					pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y);
+		}
+
 		// ............................................................................................
 		
 		// . I think working round with 4 has a disadvantage: if we get back around to one that is off-tile,
@@ -2729,7 +2758,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		LapA.x += coeff*(A_1.x-A_2.x);
 		LapA.y += coeff*(A_1.y-A_2.y);
 		LapA.z += coeff*(A_1.z-A_2.z);
-		
+
 		// Think about averaging at typical edge.
 		// Using 5/12:
 		// corners are say equidistant from 3 points, so on that it would be 1/6
@@ -2749,7 +2778,10 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 		// Now that we put minor corners at (1/3)(2 centroids+vertex), this makes even more sense.
 		
 		area += 0.333333333333333*(0.5*(pos1.x+pos2.x)+ourpos.x+u0.x)*edgenormal.x;
-		
+						
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
+
 		// ASSUMING ALL VALUES VALID (consider edge of memory a different case):
 		//  From here on is where it gets thorny as we no longer map A_1 to vertex 1.
 		// %%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%$$%%%
@@ -2833,7 +2865,10 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 		
 		area += 0.333333333333333*(0.5*(u0.x+u1.x)+ourpos.x+pos2.x)*edgenormal.x;
-		
+						
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
+
 		A_1 = A_out; // now A_1 points at corner 2
 		A_out = A_2; // now points at tri 1
 		// A_2 to point at corner 0
@@ -2877,6 +2912,9 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 		
 		area += 0.333333333333333*(0.5*(pos2.x+pos0.x)+ourpos.x+u1.x)*edgenormal.x;
+				
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
 
 		A_1 = A_out;
 		A_out = A_2;
@@ -2919,7 +2957,9 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 
 		area += THIRD*(0.5*(u2.x+u1.x)+ourpos.x+pos0.x)*edgenormal.x;
-
+				
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
 
 		A_1 = A_out;
 		A_out = A_2;
@@ -2964,6 +3004,9 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 
 		area += 0.333333333333333*(0.5*(pos0.x+pos1.x)+ourpos.x+u2.x)*edgenormal.x;
+				
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
 
 		A_1 = A_out;
 		A_out = A_2;
@@ -3006,19 +3049,25 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			 - (TWELTH*(A_1.x+A_2.x)+FIVETWELTHS*(A0.x+A_out.x))*edgenormal.y;
 		
 		area += 0.333333333333333*(0.5*(u0.x+u2.x)+ourpos.x+pos1.x)*edgenormal.x;
-		
+						
+		if (index == 73250)
+			printf("LapAx_integ _ %1.6E ; area _ %1.6E ; A_1.x %1.6E %1.6E %1.6E \n",LapA.x,area,A_1.x,A_out.x,A_2.x);
+
 		// CHECKED ALL THAT 
 		
 		// Heavy calcs are actually here: six divisions!
 		LapA /= (area);
 		B /= (area);		
+		
+		if (index == 73250)
+			printf("result %1.8E \n",LapA.x);
+		
 	} else {
 		// frill - leave Lap A = B = 0
 	}
 	p_Lap_A[index] = LapA;
 	p_B[index] = B;
 	
-
 	// Similar routine will be needed to create grad A ... or Adot ... what a waste of calcs.
 	// Is there a more sensible way: only do a mesh move every 10 steps -- ??
 	// Then what do we do on the intermediate steps -- that's a problem -- flowing Eulerian fluid
@@ -3036,11 +3085,11 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 	// Workaround taken from http://stackoverflow.com/questions/16077464/atomicadd-for-double-on-gpu
 	// Eventually decided not to use but to carry on with half the threads to target centrals in this routine.
 	
-
+	
 	if (threadIdx.x < SIZE_OF_MAJOR_PER_TRI_TILE) {
 		// Create Lap A for centrals.
 		// Outermost has to supply good boundary conditions for the outer edge.
-
+		
 		index = blockIdx.x*SIZE_OF_MAJOR_PER_TRI_TILE + threadIdx.x;
 		
 		structural info = p_info[index];
@@ -3085,7 +3134,7 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 				u3 = Clockwise_rotate2(u3);
 			};
 		}
-
+		
 		// Initial situation: inext = 1, i = 0, iprev = -1
 		iindextri = IndexTri[threadIdx.x*MAXNEIGH_d]; // + 0
 		if ((iindextri >= StartTri) && (iindextri < StartTri + threadsPerTileMinor))
@@ -3171,6 +3220,12 @@ __global__ void Kernel_Compute_Lap_A_and_Grad_A_to_get_B_on_all_minor(
 			       -(TWELTH*(A1.x+A3.x)+FIVETWELTHS*(A0.x+A2.x))*edgenormal.y;
 			area += (0.3333333333333333*(0.5*(u1.x+u3.x)+u2.x+u0.x))*edgenormal.x; 
 			// ( grad x )_x
+			
+			if (index + BEGINNING_OF_CENTRAL == 110500)  
+			{
+				printf("%d LapA.x %1.6E area %1.6E A %1.6E %1.6E %1.6E %1.6E u %1.6E %1.6E , %1.6E %1.6E , %1.6E %1.6E  , %1.6E %1.6E \n",index,
+					LapA.x,area,A0.x,A1.x,A2.x,A3.x,u0.x,u0.y,u1.x,u1.y,u2.x,u2.y,u3.x,u3.y);
+			};
 			
 			// move round A values and positions:
 			// ----------------------------------
@@ -4077,7 +4132,7 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 	__shared__ long indexneigh[MAXNEIGH_d*threadsPerTileMajor]; // 1 + 2 + 6 doublesworth
 	
 	long index = blockDim.x*blockIdx.x + threadIdx.x;
-	
+	f64 Te;
 	p_phi_shared[threadIdx.x] = p_phi[blockIdx.x*blockDim.x + threadIdx.x];
 	
 	structural info = p_info_sharing[blockIdx.x*blockDim.x + threadIdx.x];
@@ -4085,17 +4140,30 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 	{
 		nT nTtemp = p_nT_elec[blockIdx.x*blockDim.x + threadIdx.x];
 		p_Te_shared[threadIdx.x] = nTtemp.T;
+		if (nTtemp.n == 0.0) {
+			p_Te_shared[threadIdx.x] = 0.0; // recognise inner vertex
+		}
 	}
-	
-	__syncthreads();
+	Te = p_Te_shared[threadIdx.x];
 	
 	long StartMajor = blockIdx.x*blockDim.x;
 	long EndMajor = StartMajor + blockDim.x;
 	f64 phi1, phi2, Te1, Te2;
 	f64_vec2 pos1, pos2;
 
+	__syncthreads();
+	
+
 	if (info.flag == DOMAIN_VERTEX) {
-		// Don't bother otherwise, right?
+		// Don't bother otherwise, as even though grad phi == 0, 
+		
+		// We do bother otherwise.
+		// We are going to assume that we can set phi at the front and back.
+		
+		// BUT WE want to do differently for Te : for inner vertex we could skip. Does it help?
+		// What to do at insulator for Te ? Set internal values of T equal to ours.
+		
+		
 		memcpy(indexneigh + threadIdx.x*MAXNEIGH_d, p_indexneigh + MAXNEIGH_d*index, sizeof(long)*MAXNEIGH_d);
 				
 		f64_vec2 grad_phi_integrated(0.0,0.0);
@@ -4111,12 +4179,16 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 			phi1 = p_phi_shared[indexNeigh-StartMajor];
 			pos1 = p_vertex_pos_shared[indexNeigh-StartMajor];
 			Te1 = p_Te_shared[indexNeigh-StartMajor];
+			if (Te1 == 0.0) Te1 = Te;
+			
 		} else {
 			phi1 = p_phi[indexNeigh];
 			structural infotemp = p_info_sharing[indexNeigh];
 			pos1 = infotemp.pos;
 			nT nTtemp = p_nT_elec[indexNeigh];
 			Te1 = nTtemp.T;
+
+			if (nTtemp.n == 0.0) Te1 = Te;
 		};
 		if (info.has_periodic) {
 			if ((pos1.x > 0.5*pos1.y*GRADIENT_X_PER_Y) &&
@@ -4139,12 +4211,20 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 				phi2 = p_phi_shared[indexNeigh-StartMajor];
 				pos2 = p_vertex_pos_shared[indexNeigh-StartMajor];
 				Te2 = p_Te_shared[indexNeigh-StartMajor];
+				if (Te2 == 0.0) {
+					Te2 = Te;
+				}
 			} else {
 				phi2 = p_phi[indexNeigh];
 				structural infotemp = p_info_sharing[indexNeigh];
 				pos2 = infotemp.pos;
 				nT nTtemp = p_nT_elec[indexNeigh];
 				Te2 = nTtemp.T; // undefined if this neighbour is inside ins
+
+				if (nTtemp.n == 0.0) {
+					Te2 = Te; // but in shared?
+				}
+
 			};
 			if (info.has_periodic) {
 				if ((pos2.x > 0.5*pos2.y*GRADIENT_X_PER_Y) &&
@@ -4187,23 +4267,35 @@ __global__ void Kernel_Compute_grad_phi_Te_centrals(
 		p_grad_Te[index] = grad_Te_integrated/grad_x_integrated_x;
 		
 	} else {
+		// We could do it right for inner-vertex grad_phi, but no point.
 		f64_vec2 zero(0.0,0.0);
 		p_grad_phi[index] = zero;
 		p_grad_Te[index] = zero;
-	}
+	};
 }
 
 
 __global__ void Kernel_InitialisePhi(
 	structural * __restrict__ p_info_sharing,
 	f64 k1_phiinit, f64 k2_phiinit,
+	f64 V,
 	f64 * __restrict__ p_phi_out
 							  )
 {
 	long index = blockIdx.x*blockDim.x+threadIdx.x;
 	structural info = p_info_sharing[index];
 	f64 r = info.pos.modulus();
-	p_phi_out[index] = k1_phiinit*log(r)+k2_phiinit;
+	f64 result;
+	if (r <= 2.8) {
+		result = -V;
+	} else {
+		if (r >= 4.6) {
+			result = V;
+		} else {
+			result = k1_phiinit*log(r)+k2_phiinit;
+		};
+	};
+	p_phi_out[index] = result;
 
 	// ?:
 	// What about setting outermost/innermost phi values on a step.
@@ -4571,6 +4663,11 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		p_phi_shared[threadIdx.x] = p_phi[blockIdx.x*SIZE_OF_MAJOR_PER_TRI_TILE + threadIdx.x];
 		nT nTtemp = p_nT_elec[blockIdx.x*SIZE_OF_MAJOR_PER_TRI_TILE + threadIdx.x];
 		p_Te_shared[threadIdx.x] = nTtemp.T;
+
+		//if (nTtemp.n == 0.0) p_Te_shared[threadIdx.x] = 0.0; // WAY TO SIGNAL IT IS AN INNER VERTEX
+		// We don't need this - because it does not matter how grad Te is defined for CROSSING_INS and others??
+		// Still we may wish to try and make sure it is smth vaguely sensible, at the end, setting dT/dr = 0.
+
 		structural info = p_info_sharing[blockIdx.x*SIZE_OF_MAJOR_PER_TRI_TILE + threadIdx.x];
 		p_vertex_pos_shared[threadIdx.x] = info.pos;
 	}
@@ -4580,7 +4677,7 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		
 	// Take grad on triangle:
 	// first collect corner positions; if this is periodic triangle then we have to rotate em.
-	if (perinfo.flag == DOMAIN_TRIANGLE) { // ?		
+	if ((perinfo.flag == DOMAIN_TRIANGLE) || (perinfo.flag == CROSSING_INS)) { 
 		LONG3 corner_index = p_tri_corner_index[index];
 		// Do we ever require those and not the neighbours?
 		// Yes - this time for instance.
@@ -4593,6 +4690,8 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 			pos0 = p_vertex_pos_shared[corner_index.i1-StartMajor];
 			phi0 = p_phi_shared[corner_index.i1-StartMajor];
 			Te0 = p_Te_shared[corner_index.i1-StartMajor];
+
+			// Do not worry if this is not smth sensible, if inner vertex.		
 		} else {
 			// have to load in from global memory:
 			structural info = p_info_sharing[corner_index.i1];
@@ -4689,10 +4788,19 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 			));
 		grad_phi /= area;
 		GradTe /= area;
+
+		if (perinfo.flag == CROSSING_INS) {
+			// Included just for 'fun' - not clear we want to use it.
+			// dT/dr = 0
+			f64_vec2 rhat = THIRD*(pos0+pos1+pos2);
+			//rhat /= rhat.modulus();
+			GradTe -= rhat*(rhat.dot(GradTe))/(rhat.x*rhat.x+rhat.y*rhat.y);
+		}
+		
 		// Grad of phi on tri is grad for this minor within the tri:
 		p_grad_phi[index] = grad_phi;
 		p_GradTe[index] = GradTe;
-
+		
 		//if (index == 73400) {
 		//	printf("73400 Grad phi:\n"
 		//		"%d %d %d\n"
@@ -4708,6 +4816,11 @@ __global__ void Kernel_Compute_grad_phi_Te_tris(
 		f64_vec2 zero(0.0,0.0);
 		p_grad_phi[index] = zero;
 		p_GradTe[index] = zero;
+
+		// We should not need them for any non-domain triangle so it really does not matter
+		// what happens inside ins -- and this is the quickest way.
+
+
 	}
 }
 
@@ -5429,22 +5542,20 @@ __global__ void Kernel_Advance_Antiadvect_phi
 	f64 phi = p_phi[index];
 	f64_vec2 grad_phi = p_grad_phi_major[index];
 	
-	if ((info.flag == OUTERMOST) || (info.flag == INNERMOST))
-	{
-		if (info.flag == OUTERMOST) {
-			p_phi_out[index] = -V; // cathode has - => grad phi points out => E field points in => electrons flow out
-		} else {
-			p_phi_out[index] = V;
-		};
+	f64 rr = info.pos.x*info.pos.x+info.pos.y*info.pos.y;
+	f64 result;
+	if (rr <= 2.8*2.8) {
+		result = -V; // > 0
 	} else {
-		p_phi_out[index] = 
-			phi + move.dot(grad_phi) + h_use*phidot;
+		if (rr >= 4.6*4.6) {
+			result = V;
+		} else {
+			result = phi + move.dot(grad_phi) + h_use*phidot;
+		};
 	};
-
-	if (index == 10000) {
-		printf("phi[10000] %1.10E movedot %1.10E hphidot %1.10E \n",
-			phi,move.dot(grad_phi),h_use*phidot);
-	};	
+		
+	p_phi_out[index] = result; 
+		
 }
 
 __global__ void Kernel_Antiadvect_A_allminor
