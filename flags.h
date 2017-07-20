@@ -8,16 +8,27 @@ char const CLOCKWISE = 1;
 #define NEEDS_CLOCK      -1
 
 int const DOMAIN_VERTEX = 0;
-int const INNER_VERTEX = 1;
+int const DOMAIN_TRIANGLE = 0;
+int const DOMAIN_MINOR = 0;
+
+int const CROSSING_INS = 1;
+
+int const INNER_VERTEX = 3;
+int const OUT_OF_DOMAIN = 3;
 
 // note that "< 4" is a test that appears hardcoded sometimes
 int const INNERMOST_EDGE = 4;
 int const INNERMOST = 4;
 int const CONCAVE_EDGE_VERTEX = 4;
+
 int const CONVEX_EDGE_VERTEX = 5;
 int const OUTERMOST = 5;
 int const IMMOVABLE_OUTER = 5;
+
 int const REVERSE_JZ_TRI = 6;
+
+int const INNER_FRILL = 7;
+int const OUTER_FRILL = 8;
 
 // Note that we should find we basically never hit the insulator
 // As that would entail compressing the material too much
@@ -25,19 +36,6 @@ int const REVERSE_JZ_TRI = 6;
 // However we can populate a full tri mesh including tris
 // that cross the insulator.
 // We then put the vertex-centred cell corners along the insulator.
-
-// Should outer boundary be immovable? Try it so.
-
-
-// Triangle::u8domain_flag: keep this.
-
-int const DOMAIN_TRIANGLE = 0;
-int const DOMAIN_MINOR = 0;
-int const CROSSING_INS = 1;
-//int const CROSSING_INS_2OUT = 2;
-int const OUT_OF_DOMAIN = 3;
-int const INNER_FRILL = 4;
-int const OUTER_FRILL = 5;
 
 // The following does not really belong in this file:
 

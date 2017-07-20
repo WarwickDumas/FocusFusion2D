@@ -609,9 +609,11 @@ public:
 		this->Adot = pSrc->Adot;
 		this->B = pSrc->B;
 		this->E = pSrc->E;
-		this->Ion = pSrc->Ion;
-		this->Neut = pSrc->Neut;
-		this->Elec = pSrc->Elec;
+		
+		memcpy(&(this->Ion),&(pSrc->Ion),sizeof(macroscopic));
+		memcpy(&(this->Neut),&(pSrc->Neut),sizeof(macroscopic));
+		memcpy(&(this->Elec),&(pSrc->Elec),sizeof(macroscopic));
+
 		this->phi = pSrc->phi;
 		this->pos = pSrc->pos;
 		// can same class access object's private data?

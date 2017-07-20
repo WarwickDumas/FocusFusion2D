@@ -1449,20 +1449,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 #ifndef NOCUDA
 				
-				pX->CreateTilingAndResequence(pXnew);
-				// Debug that...
-
-				Systdata_host.InvokeHost(pX->numVertices);
-				pX->PopulateSystdata_from_this(&Systdata_host);
+				//pX->CreateTilingAndResequence(pXnew);
+				// Just for the purposes of debugging output, do this instead:
+				TriMesh * ptemp = pX;
+				pXnew = pX;
+				pX = ptemp;
+				// so that "tiles" are not v good!!
+				
+				Systdata_host.InvokeHost(pXnew->numVertices);
+				pXnew->PopulateSystdata_from_this(&Systdata_host);
 				
 				Systdata_host.evaltime = evaltime;
-
+				
 				printf("calling PerformCUDAAdvance\n");
 				Systdata_host.SaveHost("testsyst.sdt");
 
 				PerformCUDA_Advance_2 (
 					&Systdata_host, 
-					pX->numVertices,
+					pXnew->numVertices,
 					1e-13, 
 					10,
 					&Systdata_host
@@ -1470,16 +1474,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				evaltime += 1.0e-13;
 				printf("evaltime %1.8E\n",evaltime);
 #endif
-				pXnew->Populate_this_fromSystdata(&Systdata_host);
+				pX->Populate_this_fromSystdata(&Systdata_host);
 				printf("That's it.\n");
 				
 				// End of test.
 				//		pX->Advance(pXnew);
 
-				if (!failed)
+			//	if (!failed)
 				{
-					// Only sucking back to pX.
-
+				
 			//		temp = pX;
 			//		pX = pXnew;
 			//		pXnew = temp;
@@ -1944,18 +1947,6 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		pSystdata->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].T = pVertex->Elec.heat/pVertex->Elec.mass;
 		pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL] = pVertex->Elec.mom/pVertex->Elec.mass;
 		
-		if (iVertex == 20000) {
-			printf("20000: flag %d phi %1.10E Adot.z %1.10E\n",
-				pVertex->flags,pVertex->phi,pVertex->Adot.z);
-				//pVertex->Elec.mom.z/pVertex->Elec.mass,
-				//pSystdata->p_v_elec[iVertex + BEGINNING_OF_CENTRAL].z
-		};
-		
-		if (iVertex == 89000-BEGINNING_OF_CENTRAL) {
-			printf("%d: Te %1.10E \n",
-				89000-BEGINNING_OF_CENTRAL,
-				pVertex->Elec.heat/pVertex->Elec.mass);
-		};
 		// ===============================================================================================
 		
 		pSystdata->p_area[iVertex] = pVertex->AreaCell;
@@ -1970,12 +1961,18 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		
 		long neigh_len = pVertex->GetNeighIndexArray(izNeigh);
 		pSystdata->p_info[iVertex].flag = (short)(pVertex->flags);
-		
-		// Is this correct?
-		// ################################################!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+		// Set for central minor:
+		pSystdata->p_tri_perinfo[iVertex + BEGINNING_OF_CENTRAL].flag =  (short)(pVertex->flags);
 		
 		pSystdata->p_info[iVertex].neigh_len = (short)neigh_len;
 		pSystdata->p_info[iVertex].pos = pVertex->pos;
+		
+		if ((pVertex->flags == INNER_VERTEX) || (pVertex->flags == INNERMOST)) {
+			pSystdata->p_nT_neut_minor[iVertex + BEGINNING_OF_CENTRAL].n = 0.0;
+			pSystdata->p_nT_ion_minor[iVertex + BEGINNING_OF_CENTRAL].n = 0.0;
+			pSystdata->p_nT_elec_minor[iVertex + BEGINNING_OF_CENTRAL].n = 0.0;
+		};
 		
 		if (neigh_len > MAXNEIGH_d) {
 			printf("Too many neighbours iVertex %d : %d \n",iVertex,neigh_len);
@@ -1993,7 +1990,7 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		};
 				
 		pSystdata->p_info[iVertex].has_periodic = 0;
-		
+
 		for (i = 0; i < neigh_len; i++)
 		{
 			// For each neighbour assess its periodic status relative to this.
@@ -2417,6 +2414,7 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			
 			area += 0.333333333333333*(0.5*(pos1.x+pos2.x)+ourpos.x+u0.x)*edgenormal.x;
 			
+
 			// == 
 
 			shoelace = (ourpos.x-pos2.x)*(u0.y-u1.y)
@@ -2431,13 +2429,14 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 					 (u1.x-u0.x)*edgenormal.y)/shoelace;  
 			//LapAz += coeff*(A0.z-A_out.z);
 			LapAz += coeff*(-A2z);
-			LapAz_self += coeff*A0.z;
+			LapAz_self += coeff;
 
 			coeff = ((pos2.y-ourpos.y)*edgenormal.x +
 					 (ourpos.x-pos2.x)*edgenormal.y)/shoelace;
 			LapAz += coeff*(A0neigh-A1neigh);
 			area += 0.333333333333333*(0.5*(u0.x+u1.x)+ourpos.x+pos2.x)*edgenormal.x;
 			
+
 			// ==
 
 			shoelace = (ourpos.x-u1.x)*(pos2.y-pos0.y) // clock.y-anti.y
@@ -2459,6 +2458,7 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			LapAz += coeff*(A2z-A0z);
 
 			area += 0.333333333333333*(0.5*(pos2.x+pos0.x)+ourpos.x+u1.x)*edgenormal.x;
+
 
 			// ==
 			// A_2 is now to point at tri neigh 2
@@ -2483,6 +2483,7 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			LapAz += coeff*(A1neigh-A2neigh);
 			
 			area += THIRD*(0.5*(u2.x+u1.x)+ourpos.x+pos0.x)*edgenormal.x;
+
 
 			// ==
 			// A2 to be for corner 1
@@ -2528,11 +2529,15 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			
 			area += 0.333333333333333*(0.5*(u0.x+u2.x)+ourpos.x+pos1.x)*edgenormal.x;
 			
-			// ==
+//			if (iTri == 26514) {
+//				printf("LapAz0_integ %1.8E selfcoeff %1.8E \n",LapAz,LapAz_self);
+//			};
 
+			// ==
+			
 			LapAz /= area;
 			LapAz_self /= area;
-
+			
 			// Now get -4pi/c Jz
 			f64 minus4piovercJz = -FOURPIOVERC*q*(pSystdata->p_v_ion[iTri].z*pSystdata->p_nT_ion_minor[iTri].n 
 								- pSystdata->p_v_elec[iTri].z*pSystdata->p_nT_elec_minor[iTri].n );
@@ -2540,12 +2545,173 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 			// lap_az_self * Az + LapAz = -4pi/c Jz
 			pSystdata->p_A[iTri].z = (minus4piovercJz-LapAz)/LapAz_self;
 			
+			f64 Az;
 
-			if ((iTri > 26512) && (iTri < 26516)) {
-				printf("%d minus4piovercJz %1.8E  Lap %1.8E \n",
-					iTri,minus4piovercJz, LapAz + LapAz_self*pSystdata->p_A[iTri].z);
+			if ((iTri > 73250) && (iTri <= 73255))
+			{
+				printf("iTri %d Lap0 sel pred %1.7E %1.7E %1.7E\n",
+					iTri,LapAz, LapAz_self,LapAz + LapAz_self*pSystdata->p_A[iTri].z);
 			};
 
+			if (0) // iTri == 26514)
+			{
+				printf("-------------------\n %d minus4piovercJz %1.9E LapAz0 %1.9E , "
+					"self %1.9E Az %1.9E Lap %1.9E \n",
+					iTri,minus4piovercJz, LapAz, 
+					LapAz_self, 
+					pSystdata->p_A[iTri].z,
+					LapAz + LapAz_self*pSystdata->p_A[iTri].z);
+				
+				Az = pSystdata->p_A[iTri].z;
+				printf("Az %1.9E area %1.9E \n",Az,area);
+				// Recalculate Lap A:
+				
+				printf("u0 1 2 %1.6E %1.6E ,  %1.6E %1.6E ,  %1.6E %1.6E \n",
+					u0.x,u0.y,u1.x,u1.y,u2.x,u2.y);
+				printf("pos0 1 2  %1.6E %1.6E ,  %1.6E %1.6E ,  %1.6E %1.6E \n",
+					pos0.x,pos0.y,pos1.x,pos1.y,pos2.x,pos2.y);
+				
+				LapAz = 0.0; area = 0.0;
+				f64 contrib = 0.0;
+
+				shoelace = (ourpos.x-u0.x)*(pos1.y-pos2.y)
+							 + (pos1.x-pos2.x)*(u0.y-ourpos.y); 
+				edgenormal.x = (pos1.y-pos2.y)*0.333333333333333;
+				edgenormal.y = (pos2.x-pos1.x)*0.333333333333333;
+				if (edgenormal.dot(pos0-pos1) > 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((pos1.y-pos2.y)*edgenormal.x +
+							 (pos2.x-pos1.x)*edgenormal.y)/shoelace;
+				//LapAz += coeff*(A0.z-A_out.z);
+				LapAz += coeff*(Az-A0neigh);
+				contrib += coeff*Az;
+				coeff = ((u0.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-u0.x)*edgenormal.y)/shoelace; // from top line same
+				LapAz += coeff*(A1z-A2z);
+				area += 0.333333333333333*(0.5*(pos1.x+pos2.x)+ourpos.x+u0.x)*edgenormal.x;				
+				printf("LapAz_integ _ %1.8E ; area _ %1.6E ; ownctrib %1.8E\n",LapAz,area,contrib);
+				
+				// == 
+
+				shoelace = (ourpos.x-pos2.x)*(u0.y-u1.y)
+						 + (u0.x-u1.x)*(pos2.y-ourpos.y);
+				edgenormal.x = 0.333333333333333*(pos0.y-pos1.y);
+				edgenormal.y = 0.333333333333333*(pos1.x-pos0.x); // cut off 1/3 of the edge
+				if (edgenormal.dot(pos2-pos1) < 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((u0.y-u1.y)*edgenormal.x +
+						 (u1.x-u0.x)*edgenormal.y)/shoelace;  
+				//LapAz += coeff*(A0.z-A_out.z);
+				LapAz += coeff*(Az-A2z);
+				contrib += coeff*Az;
+				coeff = ((pos2.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-pos2.x)*edgenormal.y)/shoelace;
+				LapAz += coeff*(A0neigh-A1neigh);
+				area += 0.333333333333333*(0.5*(u0.x+u1.x)+ourpos.x+pos2.x)*edgenormal.x;
+				
+				printf("LapAz_integ _ %1.6E ; area _ %1.6E ; ownctrib %1.7E\n",LapAz,area,contrib);
+				// ==
+
+				shoelace = (ourpos.x-u1.x)*(pos2.y-pos0.y) // clock.y-anti.y
+						 + (pos2.x-pos0.x)*(u1.y-ourpos.y); 
+				edgenormal.x = 0.333333333333333*(pos0.y-pos2.y);
+				edgenormal.y = 0.333333333333333*(pos2.x-pos0.x); // cut off 1/3 of the edge
+				if (edgenormal.dot(pos1-pos0) > 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((pos2.y-pos0.y)*edgenormal.x +
+						 (pos0.x-pos2.x)*edgenormal.y)/shoelace;
+				//LapA.z += coeff*(A0.z-A_out.z);
+				LapAz += coeff*(Az-A1neigh);
+				contrib += coeff*Az;
+				coeff = ((u1.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-u1.x)*edgenormal.y)/shoelace;
+				LapAz += coeff*(A2z-A0z);
+				area += 0.333333333333333*(0.5*(pos2.x+pos0.x)+ourpos.x+u1.x)*edgenormal.x;
+				printf("LapAz_integ _ %1.6E ; area _ %1.6E ; ownctrib %1.7E\n",LapAz,area,contrib);
+				
+				// ==
+				// A_2 is now to point at tri neigh 2
+
+				shoelace = (ourpos.x-pos0.x)*(u1.y-u2.y) // clock.y-anti.y
+						 + (u1.x-u2.x)*(pos0.y-ourpos.y); 
+				edgenormal.x = 0.333333333333333*(pos1.y-pos2.y);
+				edgenormal.y = 0.333333333333333*(pos2.x-pos1.x); // cut off 1/3 of the edge
+				if (edgenormal.dot(pos0-pos1) < 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((u1.y-u2.y)*edgenormal.x +
+						 (u2.x-u1.x)*edgenormal.y)/shoelace;
+				LapAz += coeff*(Az-A0z);
+				contrib += coeff*Az;
+				coeff = ((pos0.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-pos0.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+				LapAz += coeff*(A1neigh-A2neigh);
+				area += THIRD*(0.5*(u2.x+u1.x)+ourpos.x+pos0.x)*edgenormal.x;
+				printf("LapAz_integ _ %1.6E ; area _ %1.6E ; ownctrib %1.7E\n",LapAz,area,contrib);
+				// ==
+				// A2 to be for corner 1
+
+				shoelace = (ourpos.x-u2.x)*(pos0.y-pos1.y) // clock.y-anti.y
+						 + (pos0.x-pos1.x)*(u2.y-ourpos.y); 
+				edgenormal.x = 0.333333333333333*(pos1.y-pos0.y);
+				edgenormal.y = 0.333333333333333*(pos0.x-pos1.x); // cut off 1/3 of the edge
+				if (edgenormal.dot(pos2-pos1) > 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((pos0.y-pos1.y)*edgenormal.x +
+						 (pos1.x-pos0.x)*edgenormal.y)/shoelace; // see coeffs on ourpos in shoelace
+				LapAz += coeff*(Az-A2neigh);
+				contrib += coeff*Az;
+				coeff = ((u2.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-u2.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+				LapAz += coeff*(A0z-A1z);
+				area += 0.333333333333333*(0.5*(pos0.x+pos1.x)+ourpos.x+u2.x)*edgenormal.x;
+				printf("LapAz_integ _ %1.6E ; area _ %1.6E ; ownctrib %1.7E\n",LapAz,area,contrib);
+				// ==
+				// A2 to be for tri 0
+				
+				shoelace = (ourpos.x-pos1.x)*(u2.y-u0.y) // clock.y-anti.y
+						 + (u2.x-u0.x)*(pos1.y-ourpos.y); 
+				edgenormal.x = 0.333333333333333*(pos2.y-pos0.y);
+				edgenormal.y = 0.333333333333333*(pos0.x-pos2.x); // cut off 1/3 of the edge
+				if (edgenormal.dot(pos1-pos2) < 0.0) {
+					edgenormal.x = -edgenormal.x;
+					edgenormal.y = -edgenormal.y;    
+				};
+				coeff = ((u2.y-u0.y)*edgenormal.x +
+						 (u0.x-u2.x)*edgenormal.y)/shoelace; // see coeffs on ourpos in shoelace
+				LapAz += coeff*(Az-A1z);
+				contrib += coeff*Az;
+				coeff = ((pos1.y-ourpos.y)*edgenormal.x +
+						 (ourpos.x-pos1.x)*edgenormal.y)/shoelace; // something suspicious: that we had to change smth here.
+				LapAz += coeff*(A2neigh-A0neigh);
+				area += 0.333333333333333*(0.5*(u0.x+u2.x)+ourpos.x+pos1.x)*edgenormal.x;
+				
+				printf("LapAz_integ _ %1.6E ; area _ %1.6E ; ownctrib %1.7E\n",LapAz,area,contrib);
+				// ==
+				printf("area %1.9E LapAz_integ %1.9E ",area,LapAz);
+				LapAz /= area;
+				printf("result LapAz %1.9E \n==================\n",LapAz); // DIFFERENT than claimed.
+			};
+			++pTri;
+		}
+
+		pTri = T;
+		for (iTri = 0; iTri < numTriangles; iTri++)
+		{
+			if ((pTri->u8domain_flag == OUTER_FRILL) || (pTri->u8domain_flag == INNER_FRILL)) 
+			{
+				long iNeigh = pTri->neighbours[0]-T;
+				pSystdata->p_A[iTri].z = pSystdata->p_A[iNeigh].z;
+			};
 			++pTri;
 		}
 		
@@ -2553,16 +2719,27 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		// Push this data into tris->nT
 		// Then repeat the same iteration.
 
+		GlobalIzElasticity = PIOVERPEAKTIME / tan ((evaltime + ZCURRENTBASETIME) * PIOVERPEAKTIME );
+		printf("evaltime %1.4E GIE %1.4E \n",evaltime, GlobalIzElasticity);
+
 		pTri = T;
 		for (iTri = 0; iTri < numTriangles; iTri++)
 		{
 			pTri->nT = pSystdata->p_A[iTri].z;
 			pSystdata->p_Adot[iTri].z = GlobalIzElasticity*pSystdata->p_A[iTri].z;
+			
+			if (iTri == 10000) {
+				printf("10000 Az Adotz %1.9E %1.9E \n",
+					pSystdata->p_A[iTri].z, pSystdata->p_Adot[iTri].z);
+			};
+
 			++pTri;
 		}
 	}; // 3 repeats
 
 	printf("GlobalIzElasticity used: %1.5E \n",GlobalIzElasticity);
+
+	getch();
 
 	// Hopefully a better result than just interpolating A.
 

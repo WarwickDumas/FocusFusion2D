@@ -7149,7 +7149,6 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// Now we have to do the last row. Do an azimuthal sweep.
 
 	// Sort points.
-
 	long thetaindex[2048];
 	real thetaarray[2048];
 	pVertex = X;
@@ -7184,18 +7183,43 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		};
 	};
 	
+	Vertex * pDestvert;
 	for (iTile = 0; iTile < numTilesMajor; iTile++)
 	for (iThread = 0; iThread < threadsPerTileMajor; iThread++)
 	{
 		pVertex = X + index[iTile][iThread];
 		pVertex->iIndicator = iTile*threadsPerTileMajor + iThread;
+		
+	//	pDestvert = pDestMesh->X + iTile*threadsPerTileMajor + iThread;
+	//	memcpy(pDestvert,pVertex,sizeof(Vertex)); // This means no dynamic arrays can be involved. Are they?
+		
+		// Be careful: neighbours izNeigh refer to old indices -- so what to do now?
+
+		/*pDestvert->A = pVertex->A;
+		pDestvert->Adot = pVertex->Adot;
+		pDestvert->AreaCell = pVertex->AreaCell;
+		pDestvert->B = pVertex->B;
+		pDestvert->centroid = pVertex->centroid;
+		pDestvert->E = pVertex->E;
+		pDestvert->Elec = pVertex->Elec;
+		pDestvert->flags = pVertex->flags;
+		pDestvert->has_periodic = pVertex->has_periodic;
+		pDestvert->Ion = pVertex->Ion;
+		pDestvert->izNeigh;
+		pDestvert->izTri;
+		pDestvert->neigh_len = pVertex->neigh_len;
+		pDestvert->Neut = pVertex->Neut;
+		pDestvert->phi = pVertex->phi;
+		pDestvert->pos = pVertex->pos;
+		pDestvert->p*/
+
 	}
 	
 	printf("Reseq : vertex mapping done.\n");
 	
+	
 	// ===============================================================================	
 	// -------------------------------------------------------------------------------
-	// So we can proceed by: 
 	
 	// Now comes the next: assign triangles into blocks also. :-(
 	// More fiddlinesse :
@@ -7254,7 +7278,6 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 	// should start by assigning those...
 	// If 1 more, we can go along assigning those, and so on.
 	// Okay, that didn't work.
-
 
 	// Going with a domain decomposition type of idea instead. For simplicity
 	// let us take individual rows. We want to first try to assign the right number
@@ -7927,6 +7950,12 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		pVertdest = pDestMesh->X + pVertex->iIndicator;
 		
 		pVertdest->CopyDataFrom(pVertex);
+
+		if (iVertex == 20000) 
+			printf("pVertex 20000->Elec.mom.z %1.8E\n"
+				   "pVertdest->Elec.mom.z %1.8E\n",
+				pVertex->Elec.mom.z,pVertdest->Elec.mom.z);
+
 		pVertdest->CopyLists(pVertex);
 		// but now we need to change them:
 		
@@ -7945,7 +7974,7 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		{
 			pVertdest->AddTriIndex((T + izTri[i])->indicator);
 		};
-		
+		++pVertex;
 		// Careful about other stuff.
 	}
 	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
@@ -7973,13 +8002,20 @@ void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh) {
 		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
 		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
 		
-		
-		
-		
 		++pTri;
 	}
 	
 	printf("Tiling & resequencing done.\n");
+	
+	// Also copy across any other stuff from source to dest:
+
+	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
 	
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
