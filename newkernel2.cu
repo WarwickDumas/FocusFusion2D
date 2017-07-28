@@ -4337,7 +4337,7 @@ __global__ void Kernel_GetThermalPressureCentrals(
 		f64_vec2 grad_nT_integrated(0.0,0.0);
 		f64 nT1, nT2;
 		f64_vec2 pos1, pos2;
-
+		f64 nT0 = p_nT_shared[threadIdx.x];
 //		f64 areasum = 0.0;
 		
 		// Now let's be careful ... we want to integrate grad nT over the central cell
@@ -4354,11 +4354,18 @@ __global__ void Kernel_GetThermalPressureCentrals(
 		{
 			nT1 = p_nT_shared[indexNeigh-StartMajor];
 			pos1 = p_vertex_pos_shared[indexNeigh-StartMajor];
+			if (nT1 == 0.0) {
+				nT1 = nT0;
+			}
 		} else {
 			nT nT_temp = p_nT_neut[indexNeigh];
 			nT1 = nT_temp.n*nT_temp.T;
 			structural infotemp = p_info_sharing[indexNeigh];
 			pos1 = infotemp.pos;
+
+			if (nT_temp.n == 0.0) {
+				nT1 = nT0; // but in shared?
+			}
 		};
 		if (info.has_periodic) {
 			if ((pos1.x > 0.5*pos1.y*GRADIENT_X_PER_Y) &&
@@ -4380,11 +4387,17 @@ __global__ void Kernel_GetThermalPressureCentrals(
 			{
 				nT2 = p_nT_shared[indexNeigh-StartMajor];
 				pos2 = p_vertex_pos_shared[indexNeigh-StartMajor];
+				if (nT2 == 0.0) {
+					nT2 = nT0;
+				}
 			} else {
 				nT nT_temp = p_nT_neut[indexNeigh];
 				nT2 = nT_temp.n*nT_temp.T;
 				structural infotemp = p_info_sharing[indexNeigh];
 				pos2 = infotemp.pos;
+				if (nT_temp.n == 0.0) {
+					nT2 = nT0; // but in shared?
+				}
 			};
 			if (info.has_periodic) {
 				if ((pos2.x > 0.5*pos2.y*GRADIENT_X_PER_Y) &&
@@ -4426,7 +4439,7 @@ __global__ void Kernel_GetThermalPressureCentrals(
 					 -grad_nT_integrated.y/(9.0*m_n),
 					 0.0);
 		p_MAR_neut[index] += add;
-
+		
 		if (index == 20000) {
 			printf("\n\nGTPC 20000: %1.9E %1.9E \n",grad_nT_integrated.x,grad_nT_integrated.y);
 			printf("nT1 nT2: %1.9E %1.9E \n\n",nT1,nT2);
@@ -5910,7 +5923,7 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 
 			if ((OUTPUT) && (index == REPORT)) printf("vn0 %1.8E .. %1.8E\n",v_n_0.x,				
 					n_ionrec.n_recombine*(m_i_over_m_n*v_ion_k.x + m_e_over_m_n*v_e_k.x)/n_n_plus);
-			// == 0
+			
 			{
 				//Vector2 grad_nT_neut = p_grad_nT_neut[index];
 				Vector3 MomAdditionRate = p_MomAdditionRate_neut[index];
@@ -5962,11 +5975,11 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 				vec_i =     // Ionisation affected v_i_k:
 					((nT_ion_src.n-n_ionrec.n_recombine)*v_ion_k + n_ionrec.n_ionise*v_n_k)/n_ion_plus;
 					
-				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.8E %1.8E %1.8E\n",vec_i.x,vec_i.y,vec_i.z);
 					
 				vec_i -= h*0.5*moverM*omega_ce.cross(v_ion_k);		
 
-				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.8E %1.8E %1.8E\n",vec_i.x,vec_i.y,vec_i.z);
 				
 				vec_i +=
 					  h*qoverM*( //- grad_phi [[below]]
@@ -5976,10 +5989,10 @@ __global__ void Kernel_Midpoint_v_and_Adot (
 					- h*0.5*(m_n/(m_ion+m_n))*nu_ni_MT_over_n*nT_neut_use.n*(v_ion_k-v_n_k-v_n_0)
 					- h*0.5*moverM*nu_ieBar*(v_ion_k-v_e_k);
 				
-				if ((OUTPUT) && (index == REPORT)) printf("dAdt_kz/c  %1.5E  hc0.5 Lap_Az_half %1.5E \n"
-					"n_ion vx_ion_k - n_e vx_e_k %1.6E \n"
-					" n-i term x %1.6E\n"
-					" nu_ieBar term x %1.6E \n",
+				if ((OUTPUT) && (index == REPORT)) printf("dAdt_kz/c  %1.8E  hc0.5 Lap_Az_half %1.8E \n"
+					"n_ion vx_ion_k - n_e vx_e_k %1.8E \n"
+					" n-i term x %1.8E\n"
+					" nu_ieBar term x %1.8E \n",
 dAdt_k.z/c,
 h*c*0.5*Lap_A_half.z, nT_ion_src.n*v_ion_k.x - nT_elec_src.n*v_e_k.x, h*0.5*(m_n/(m_ion+m_n))*nu_ni_MT_over_n*nT_neut_use.n*(v_ion_k.x-v_n_k.x-v_n_0.x),
 h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
@@ -5990,13 +6003,13 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 					);
 
 
-				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.8E %1.8E %1.8E\n",vec_i.x,vec_i.y,vec_i.z);
 				
 				vec_i.x -= h*qoverM*grad_phi.x;
 				vec_i.y -= h*qoverM*grad_phi.y;
 				vec_i.z += h*qoverM*EzShape*EzTuning;
 				
-				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.5E %1.5E %1.5E\n",vec_i.x,vec_i.y,vec_i.z);
+				if ((OUTPUT) && (index == REPORT))	printf("vec_i %1.8E %1.8E %1.8E\n",vec_i.x,vec_i.y,vec_i.z);
 				
 				// -grad_nT_ion.x + ViscMomAdditionRate_ion.x
 				
@@ -6048,12 +6061,24 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 							);
 								
 				if ((OUTPUT) && (index == REPORT)) {
-					printf("%d vik %1.4E %1.4E %1.4E Vi %1.4E %1.4E %1.4E \n",
+					printf("%d vik %1.8E %1.8E %1.8E \nvec_i %1.8E %1.8E %1.8E \n",
 						index,v_ion_k.x,v_ion_k.y,v_ion_k.z,vec_i.x,vec_i.y,vec_i.z);
 				};
 				
+
+
+
+
+
+
+
+
+
+
 				vec_e = ((nT_elec_src.n-n_ionrec.n_recombine)*v_e_k + n_ionrec.n_ionise*v_n_k)/n_e_plus;
-			
+				
+				if ((OUTPUT) && (index == REPORT)) printf("v_e_k %1.8E %1.8E %1.8E\n",v_e_k.x,v_e_k.y,v_e_k.z);
+				
 				vec_e += h*0.5*omega_ce.cross(v_e_k)
 					- h*eoverm*(// -grad_phi // below
 							- dAdt_k/c - h*c*0.5*Lap_A_half
@@ -6065,9 +6090,6 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 				vec_e.x += h*eoverm*grad_phi.x ;
 				vec_e.y += h*eoverm*grad_phi.y;
 				vec_e.z += -h*eoverm*EzShape*EzTuning;
-				
-				if ((OUTPUT) && (index == REPORT))
-					printf("vec_e %1.6E %1.6E %1.6E\n",vec_e.x,vec_e.y,vec_e.z);
 				
 				//vec_e.x += h*( (-grad_nT_e.x )/(n_e_plus*m_e));
 				
@@ -6086,16 +6108,12 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 							  (omega_ce.x*omega_ce.z - nu_eHeart*omega_ce.y)*GradTe.x
 							+ (omega_ce.y*omega_ce.z + nu_eHeart*omega_ce.x)*GradTe.y);
 							
-			
 				if ((OUTPUT) && (index == REPORT)) {
-					printf("vec_e intermed %1.6E %1.6E %1.6E\n",vec_e.x,vec_e.y,vec_e.z);
-			
+					printf("vec_e total %1.6E %1.6E %1.8E\n",vec_e.x,vec_e.y,vec_e.z);
 					printf("h*eoverm*grad_phi %1.6E %1.6E \n",h*eoverm*grad_phi.x,h*eoverm*grad_phi.y);
-
 					printf("h*(MomAdditionRate/(n_e_plus*area)) %1.6E %1.6E \n",
 						h*(MomAdditionRate.x/(n_e_plus*area)),
 						h*(MomAdditionRate.y/(n_e_plus*area)));
-
 					printf("h*0.5*omega_ce.cross(v_e_k).z %1.10E \n",
 						h*0.5*(omega_ce.cross(v_e_k)).z);
 					printf("h*eoverm*dAdt_k/c %1.6E \n h*eoverm*h*c*0.5*Lap_A_half %1.6E\n"
@@ -6108,10 +6126,9 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 						// Where is the term that cancels its impact?
 						0.5*h*(m_n/(m_e+m_n))*nu_ne_MT_over_n*nT_neut_use.n*(v_e_k-v_n_k-v_n_0).z,
 						0.5*h*nu_eiBar*(v_e_k-v_ion_k).z);
-					printf("-h*eoverm*EzShape*EzTuning %1.6E\n",
+					printf("-h*eoverm*EzShape*EzTuning %1.8E\n",
 						-h*eoverm*EzShape*EzTuning);
-					
-					printf("thermal contrib %1.6E\n",
+					printf("thermal contrib z %1.8E\n",
 						fac*(
 							  (omega_ce.x*omega_ce.z - nu_eHeart*omega_ce.y)*GradTe.x
 							+ (omega_ce.y*omega_ce.z + nu_eHeart*omega_ce.x)*GradTe.y));
@@ -6134,14 +6151,14 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			
 				if ((OUTPUT) && (index == REPORT))
 				{
-					printf("contrib_upsilon %1.6E\n",
+					printf("contrib_[e-i] %1.8E\n",
 							fac*(
 						  (omega_ce.z*omega_ce.x - nu_eHeart*omega_ce.y)*(v_e_k.x-v_ion_k.x)
 							+ (omega_ce.z*omega_ce.y + nu_eHeart*omega_ce.x)*(v_e_k.y-v_ion_k.y)
 							+ (omega_ce.z*omega_ce.z + nu_eHeart*nu_eHeart)*(v_e_k.z-v_ion_k.z)));
 				
-					printf("%d vek %1.4E %1.4E %1.4E \nVe %1.4E %1.4E %1.4E \n",
-						index,v_e_k.x,v_e_k.y,v_e_k.z,vec_e.x,vec_e.y,vec_e.z);
+					printf("vec_e %1.8E %1.8E %1.8E \n",
+						vec_e.x,vec_e.y,vec_e.z);
 				};
 			}
 
@@ -6237,7 +6254,7 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			vec_e -= Tens1*vec_i;
 		
 			if ((OUTPUT) && (index == REPORT))
-				printf("modified vec_e \n %1.6E %1.6E %1.6E \n",
+				printf("modified vec_e \n %1.8E %1.8E %1.8E \n",
 					vec_e.x,vec_e.y,vec_e.z);
 		
 			// Let's watch out:
@@ -6337,12 +6354,17 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 					Tens2.zx,Tens2.zy,Tens2.zz,vec_e.z,v_e_plus.z);
 				printf("\n");
 				// Test relationship:
-				printf("(1-hh) %1.4E (1-..)/(1+..) %1.4E\n",
-					(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n),(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus));
-				printf("vekz %1.4E rat*vekz %1.4E vez %1.4E \n************\n",
-					v_e_k.z,v_e_k.z*(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus),v_e_plus.z);
+				printf("(1-hh) %1.10E (1+..)/(1+..) %1.10E\n",
+					(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n),
+					
+					(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus));
+				printf("vek.z %1.8E rat*vekz %1.8E vez_k+1 %1.8E \nek ne+ %1.10E %1.10E\n************\n",
+					v_e_k.z,
+				v_e_k.z*(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus),
+				v_e_plus.z,
+				nT_elec_src.n,n_e_plus);
 			};
-						
+			
 			// Effect of EzTuning:
 			
 			// Now we come to part of the routine where we have to record the effects of scaling the external Ez field.
@@ -6403,18 +6425,26 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 				
 				Iz[threadIdx.x] = q*area*(v_ion_plus.z*n_ion_plus - v_e_plus.z*n_e_plus);
 				
+				if ((OUTPUT) && (index == REPORT)) {
+					printf("Iz : %1.8E ion %1.8E elec %1.8E \n"
+						   "old: %1.8E ion %1.8E elec %1.8E \n------\n",
+						   Iz[threadIdx.x], q*area*v_ion_plus.z*n_ion_plus,-q*area*v_e_plus.z*n_e_plus,
+						   q*area*(v_ion_k.z*nT_ion_src.n-v_e_k.z*nT_elec_src.n),
+									q*area*v_ion_k.z*nT_ion_src.n,-q*area*v_e_k.z*nT_elec_src.n);
+				}
+
 				if //((OUTPUT) && (index == REPORT)) {
 					//(Iz[threadIdx.x] > 1.0e6) || 
-					((0) && (Iz[threadIdx.x] != Iz[threadIdx.x])) 
+					( (Iz[threadIdx.x] != Iz[threadIdx.x])) 
 				{ // && (index < BEGINNING_OF_CENTRAL)){
-					printf("%d Iz %1.5E sig %1.4E ne %1.4E vez %1.4E\n",
-							index,
+					printf("!__ %d %d | Iz %1.8E sig %1.8E ne %1.8E vez %1.8E r %1.8E\n",
+							index,per_info.flag,
 							//q*area*(v_ion_plus.z*n_ion_plus - v_e_0.z*n_e_plus),
 							Iz[threadIdx.x],
 							sigma_zz[threadIdx.x],
-							n_e_plus, v_e_plus.z);
-				};
-				
+							n_e_plus, v_e_plus.z,
+							centroid.modulus());
+				};				
 			} // ve_plus_of_EzTuning goes out of scope
 			
 			v_n_plus = v_n_0 + Beta_ne*v_e_plus + Beta_ni*v_ion_plus;  // Here is v_n_k+1
@@ -6684,6 +6714,7 @@ __global__ void Kernel_Heating_routine(
 	
 	__syncthreads();
 	
+
 	f64 niTi, nnTn, neTe;				
 	nT  nT_ion_src, nT_elec_src, nT_neut_src,
 		nT_neut_use, nT_ion_use, nT_elec_use;
@@ -6708,227 +6739,237 @@ __global__ void Kernel_Heating_routine(
 	nT_neut_src = p_nT_neut_src[index];
 	nT_ion_src = p_nT_ion_src[index];
 	nT_elec_src = p_nT_elec_src[index];	
+
+	if (info.flag == DOMAIN_VERTEX) {
 		
-	if (b2ndPass) {
-		nT_neut_use = p_nT_neut_out[index];
-		nT_ion_use = p_nT_ion_out[index];
-		nT_elec_use = p_nT_elec_out[index];
+		if (b2ndPass) {
+			nT_neut_use = p_nT_neut_out[index];
+			nT_ion_use = p_nT_ion_out[index];
+			nT_elec_use = p_nT_elec_out[index];
+		} else {
+			nT_neut_use = nT_neut_src;
+			nT_ion_use = nT_ion_src;
+			nT_elec_use = nT_elec_src;
+		}	
+		
+
+		nn n_ionrec = p_nn_ionrec[index];  
+		n_n_plus = nT_neut_src.n + n_ionrec.n_recombine-n_ionrec.n_ionise;
+		n_ion_plus = nT_ion_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
+		n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
+
+
+		// worked with more commented.
+
+		niTi = (nT_ion_src.n-n_ionrec.n_recombine)*nT_ion_src.T 
+			  + 0.5*n_ionrec.n_ionise*nT_neut_src.T;
+		
+		nnTn = (nT_neut_src.n-n_ionrec.n_ionise)*nT_neut_src.T
+			  + n_ionrec.n_recombine*(nT_elec_src.T+nT_ion_src.T )
+			  + n_ionrec.n_recombine*TWOTHIRDS*13.6*kB;
+		
+		neTe = (nT_elec_src.n-n_ionrec.n_recombine)*nT_elec_src.T
+			  + 0.5*n_ionrec.n_ionise*nT_neut_src.T
+			  - n_ionrec.n_ionise*TWOTHIRDS*13.6*kB;	
+		
+		if ((OUTPUT) && (index == REPORT)){
+				printf(
+					"Tsrc  %1.5E %1.5E %1.5E \n"
+					"nT ionise %1.5E %1.5E %1.5E \n",
+					nT_neut_src.T,nT_ion_src.T,nT_elec_src.T,
+					nnTn,niTi,neTe);
+			};
+		// This will serve as part of the right hand side for including heat transfers.
+		
+		// Visc+cond heat addition:
+		// ------------------------
+		// DKE = 1/2 m n v.v 
+		// We should associate a heating amount with each wall that will be positive.
+		// ( That works out nicely for offset! )
+		// That means we need to do a fetch. We can't work out visc htg without knowing
+		// neighbour v, which means we might as well store it - correct?
+		// If we are adding to v then we are increasing or decreasing DKE here -- but 
+		// then we want net + heating appearing in this and the neighbour.
+		// So that leaves us having to do a fetch always.
+		
+		// & Include heat conduction heat addition in same step.
+		// ------------------------
+		{
+			// CAREFUL ABOUT WHETHER THESE WERE CREATED DIVIDING BY AREA.
+			
+			// Either we will reinstate these here, or, 
+			// we will proceed by putting the necessary heat into
+			// what is now the "resistive" variable, major/central part.
+
+	//		nnTn += h*p_visccond_heatrate_neut[index];
+	//		niTi += h*p_visccond_heatrate_ion[index];
+	//		neTe += h*p_visccond_heatrate_elec[index];
+		}
+		
+		// Now drag in the resistive heat rates INCLUDING its own central.
+		{
+			f64 neut_resistive = 0.0, ion_resistive = 0.0, elec_resistive = 0.0;
+			long iTri;
+			for (iTri = 0; iTri < info.neigh_len; iTri++)
+			{
+				// CAREFUL of cases where we are at the edge.
+				long index_tri = indextri[threadIdx.x*MAXNEIGH_d + iTri];
+				if ((index_tri >= StartTri) && (index_tri < StartTri + SIZE_OF_TRI_TILE_FOR_MAJOR))
+				{
+					neut_resistive += resistive_neut[index_tri-StartTri];
+					ion_resistive += resistive_ion[index_tri-StartTri];
+					elec_resistive += resistive_elec[index_tri-StartTri];
+				} else {
+					neut_resistive += p_resistive_heat_neut[index_tri];
+					ion_resistive += p_resistive_heat_ion[index_tri];
+					elec_resistive += p_resistive_heat_elec[index_tri];
+				};
+			}
+			neut_resistive *= THIRD;
+			ion_resistive *= THIRD;
+			elec_resistive *= THIRD;
+			// Try __syncthreads here...
+			// Add the values for central cell:
+			neut_resistive += p_resistive_heat_neut[BEGINNING_OF_CENTRAL + index];
+			ion_resistive += p_resistive_heat_ion[BEGINNING_OF_CENTRAL + index];
+			elec_resistive += p_resistive_heat_elec[BEGINNING_OF_CENTRAL + index];
+			nnTn += neut_resistive/area;
+			niTi += ion_resistive/area;
+			neTe += elec_resistive/area; // These were the additions to NT
+		}
+		
+		// NO CRASH IF PUT IT HERE.
+
+
+		// So we have now to collect things like:
+		// nu_eHeart, nu_eiBar :
+		f64 nu_ne_MT_over_n, nu_ni_MT_over_n, nu_eiBar, nu_ieBar, nu_eHeart; // 5 double
+		Vector3 omega_ce = eovermc*p_B_major[index];
+		{
+			f64 sqrt_Te = sqrt(nT_elec_use.T);
+			f64 s_en_visc = Estimate_Ion_Neutral_Viscosity_Cross_section(nT_elec_use.T*one_over_kB);
+			f64 electron_thermal = sqrt_Te*over_sqrt_m_e;
+			f64 ionneut_thermal = sqrt(nT_ion_use.T/m_ion+nT_neut_use.T/m_n); // hopefully not sqrt(0)
+			f64 lnLambda = Get_lnLambda_d(nT_ion_use.n,nT_elec_use.T);
+			f64 s_in_MT = Estimate_Neutral_MT_Cross_section(nT_ion_use.T*one_over_kB);
+			f64 s_en_MT = Estimate_Neutral_MT_Cross_section(nT_elec_use.T*one_over_kB);
+			nu_ne_MT_over_n = s_en_MT*electron_thermal; // have to multiply by n_e for nu_ne_MT
+			nu_ni_MT_over_n = s_in_MT*ionneut_thermal;
+			nu_eiBar = nu_eiBarconst*kB_to_3halves*nT_ion_use.n*lnLambda/(nT_elec_use.T*sqrt_Te);
+			nu_ieBar = nT_elec_use.n*nu_eiBar/nT_ion_use.n;
+			nu_eHeart = 1.87*nu_eiBar + 
+							nT_neut_use.n*s_en_visc*electron_thermal;
+		}
+		
+		// From here on doing the inter-species heat exchange:
+		Tensor3 Tens1; 	
+		{
+			f64 M_in = m_n*m_ion/((m_n+m_ion)*(m_n+m_ion));
+			f64 M_en = m_n*m_e/((m_n+m_e)*(m_n+m_e));
+			f64 M_ie = m_ion*m_e/((m_ion+m_e)*(m_ion+m_e));
+			
+			// See section 10.3.1, June 2016 doc.
+			// Seems good idea to do this in heat, or manipulate equivalently.
+			
+			// d/dt(NT) = U NT
+			// Add to the RH vector, h*0.5*U*NT_k:
+			Tens1.xx = -2.0*(M_in*nu_ni_MT_over_n*nT_ion_use.n + M_en*nu_ne_MT_over_n*nT_elec_use.n);
+			Tens1.xy = 2.0*M_in*nu_ni_MT_over_n*nT_neut_use.n;
+			Tens1.xz = 2.0*M_en*nu_ne_MT_over_n*nT_neut_use.n;
+			
+			Tens1.yx = 2.0*M_in*nu_ni_MT_over_n*nT_ion_use.n;
+			Tens1.yy = -2.0*(M_in*nu_ni_MT_over_n*nT_neut_use.n
+						   + M_ie*nu_ieBar);
+			Tens1.yz = 2.0*M_ie*nu_eiBar;
+			
+			Tens1.zx = 2.0*M_en*nu_ne_MT_over_n*nT_elec_use.n;
+			Tens1.zy = 2.0*M_ie*nu_ieBar;
+			Tens1.zz = -2.0*(M_ie*nu_eiBar + M_en*nu_ne_MT_over_n*nT_neut_use.n);
+		}
+		
+		// Midpoint: 
+		// d/dt (nT) = U
+		// (nT)_k+1 = (1 - h/2 U)^-1 (1+h/2 U) (nT)_k
+		
+		nnTn += h*0.5*(Tens1.xx*(nT_neut_src.n*nT_neut_src.T)
+					   + Tens1.xy*(nT_ion_src.n*nT_ion_src.T)
+					   + Tens1.xz*(nT_elec_src.n*nT_elec_src.T)
+					   );
+		niTi += h*0.5*(Tens1.yx*(nT_neut_src.n*nT_neut_src.T)
+					   + Tens1.yy*(nT_ion_src.n*nT_ion_src.T)
+					   + Tens1.yz*(nT_elec_src.n*nT_elec_src.T)
+					   );
+		neTe += h*0.5*(Tens1.zx*(nT_neut_src.n*nT_neut_src.T)
+					   + Tens1.zy*(nT_ion_src.n*nT_ion_src.T)
+					   + Tens1.zz*(nT_elec_src.n*nT_elec_src.T)
+					   );
+		
+		// Matrix is 1 - h*0.5*U
+		
+		Tens1.xx = 1.0-h*0.5*Tens1.xx;
+		Tens1.xy = -h*0.5*Tens1.xy;
+		Tens1.xz = -h*0.5*Tens1.xz;
+		
+		Tens1.yx = -h*0.5*Tens1.yx;
+		Tens1.yy = 1.0-h*0.5*Tens1.yy;
+		Tens1.yz = -h*0.5*Tens1.yz;
+		
+		Tens1.zx = -h*0.5*Tens1.zx;
+		Tens1.zy = -h*0.5*Tens1.zy;
+		Tens1.zz = 1.0-h*0.5*Tens1.zz;
+		
+		
+		if ((OUTPUT) && (index == REPORT)) {
+				printf("nT_before %1.5E %1.5E %1.5E \n",
+					nnTn,niTi,neTe);
+			};
+		{
+			Tensor3 Tens2;
+			Tens1.Inverse(Tens2);
+			Vector3 RH,LH;
+			RH.x = nnTn;
+			RH.y = niTi;
+			RH.z = neTe;
+			LH = Tens2*RH;
+			nnTn = LH.x;
+			niTi = LH.y;
+			neTe = LH.z;				
+		}
+		if ((OUTPUT) && (index == REPORT)) {
+				printf("nT_after %1.5E %1.5E %1.5E \n",
+					nnTn,niTi,neTe);
+		};
+		// END OF COMMENT
+
+
+		// Overwrite any old rubbish in memory so that we can save off the output:
+		nT_neut_use.n = n_n_plus;
+		nT_neut_use.T = nnTn/n_n_plus;
+		nT_ion_use.n = n_ion_plus;
+		nT_ion_use.T = niTi/n_ion_plus;
+		nT_elec_use.n = n_e_plus;
+		nT_elec_use.T = neTe/n_e_plus;	
+		if (b2ndPass == false) {
+			// Tween back to halfway if this is the first pass:
+			nT_neut_use.n = 0.5*(nT_neut_src.n + nT_neut_use.n);
+			nT_ion_use.n = 0.5*(nT_ion_src.n + nT_ion_use.n);
+			nT_elec_use.n = 0.5*(nT_elec_src.n + nT_elec_use.n);
+			nT_neut_use.T = 0.5*(nT_neut_src.T + nT_neut_use.T);
+			nT_ion_use.T = 0.5*(nT_ion_src.T + nT_ion_use.T);
+			nT_elec_use.T = 0.5*(nT_elec_src.T + nT_elec_use.T);
+		};
+		
+		//if ((OUTPUT) && (index == REPORT))
+		//	printf("Te %1.5E \n################\n",nT_elec_use.T);
+		// */ this was the end of commenting
 	} else {
+		
+		// Not DOMAIN_VERTEX :
+
 		nT_neut_use = nT_neut_src;
 		nT_ion_use = nT_ion_src;
 		nT_elec_use = nT_elec_src;
-	}	
-	
-
-	nn n_ionrec = p_nn_ionrec[index];  
-	n_n_plus = nT_neut_src.n + n_ionrec.n_recombine-n_ionrec.n_ionise;
-	n_ion_plus = nT_ion_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
-	n_e_plus = nT_elec_src.n + n_ionrec.n_ionise-n_ionrec.n_recombine;
-
-
-	// worked with more commented.
-
-	niTi = (nT_ion_src.n-n_ionrec.n_recombine)*nT_ion_src.T 
-		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T;
-	
-	nnTn = (nT_neut_src.n-n_ionrec.n_ionise)*nT_neut_src.T
-		  + n_ionrec.n_recombine*(nT_elec_src.T+nT_ion_src.T )
-		  + n_ionrec.n_recombine*TWOTHIRDS*13.6*kB;
-	
-	neTe = (nT_elec_src.n-n_ionrec.n_recombine)*nT_elec_src.T
-		  + 0.5*n_ionrec.n_ionise*nT_neut_src.T
-		  - n_ionrec.n_ionise*TWOTHIRDS*13.6*kB;	
-	
-	if ((OUTPUT) && (index == REPORT)){
-			printf(
-				"Tsrc  %1.5E %1.5E %1.5E \n"
-				"nT ionise %1.5E %1.5E %1.5E \n",
-				nT_neut_src.T,nT_ion_src.T,nT_elec_src.T,
-				nnTn,niTi,neTe);
-		};
-	// This will serve as part of the right hand side for including heat transfers.
-	
-	// Visc+cond heat addition:
-	// ------------------------
-	// DKE = 1/2 m n v.v 
-	// We should associate a heating amount with each wall that will be positive.
-	// ( That works out nicely for offset! )
-	// That means we need to do a fetch. We can't work out visc htg without knowing
-	// neighbour v, which means we might as well store it - correct?
-	// If we are adding to v then we are increasing or decreasing DKE here -- but 
-	// then we want net + heating appearing in this and the neighbour.
-	// So that leaves us having to do a fetch always.
-	
-	// & Include heat conduction heat addition in same step.
-	// ------------------------
-	{
-		// CAREFUL ABOUT WHETHER THESE WERE CREATED DIVIDING BY AREA.
-		
-		// Either we will reinstate these here, or, 
-		// we will proceed by putting the necessary heat into
-		// what is now the "resistive" variable, major/central part.
-
-//		nnTn += h*p_visccond_heatrate_neut[index];
-//		niTi += h*p_visccond_heatrate_ion[index];
-//		neTe += h*p_visccond_heatrate_elec[index];
-	}
-	
-	// Now drag in the resistive heat rates INCLUDING its own central.
-	{
-		f64 neut_resistive = 0.0, ion_resistive = 0.0, elec_resistive = 0.0;
-		long iTri;
-		for (iTri = 0; iTri < info.neigh_len; iTri++)
-		{
-			// CAREFUL of cases where we are at the edge.
-			long index_tri = indextri[threadIdx.x*MAXNEIGH_d + iTri];
-			if ((index_tri >= StartTri) && (index_tri < StartTri + SIZE_OF_TRI_TILE_FOR_MAJOR))
-			{
-				neut_resistive += resistive_neut[index_tri-StartTri];
-				ion_resistive += resistive_ion[index_tri-StartTri];
-				elec_resistive += resistive_elec[index_tri-StartTri];
-			} else {
-				neut_resistive += p_resistive_heat_neut[index_tri];
-				ion_resistive += p_resistive_heat_ion[index_tri];
-				elec_resistive += p_resistive_heat_elec[index_tri];
-			};
-		}
-		neut_resistive *= THIRD;
-		ion_resistive *= THIRD;
-		elec_resistive *= THIRD;
-		// Try __syncthreads here...
-		// Add the values for central cell:
-		neut_resistive += p_resistive_heat_neut[BEGINNING_OF_CENTRAL + index];
-		ion_resistive += p_resistive_heat_ion[BEGINNING_OF_CENTRAL + index];
-		elec_resistive += p_resistive_heat_elec[BEGINNING_OF_CENTRAL + index];
-		nnTn += neut_resistive/area;
-		niTi += ion_resistive/area;
-		neTe += elec_resistive/area; // These were the additions to NT
-	}
-	
-	// NO CRASH IF PUT IT HERE.
-
-
-	// So we have now to collect things like:
-	// nu_eHeart, nu_eiBar :
-	f64 nu_ne_MT_over_n, nu_ni_MT_over_n, nu_eiBar, nu_ieBar, nu_eHeart; // 5 double
-	Vector3 omega_ce = eovermc*p_B_major[index];
-	{
-		f64 sqrt_Te = sqrt(nT_elec_use.T);
-		f64 s_en_visc = Estimate_Ion_Neutral_Viscosity_Cross_section(nT_elec_use.T*one_over_kB);
-		f64 electron_thermal = sqrt_Te*over_sqrt_m_e;
-		f64 ionneut_thermal = sqrt(nT_ion_use.T/m_ion+nT_neut_use.T/m_n); // hopefully not sqrt(0)
-		f64 lnLambda = Get_lnLambda_d(nT_ion_use.n,nT_elec_use.T);
-		f64 s_in_MT = Estimate_Neutral_MT_Cross_section(nT_ion_use.T*one_over_kB);
-		f64 s_en_MT = Estimate_Neutral_MT_Cross_section(nT_elec_use.T*one_over_kB);
-		nu_ne_MT_over_n = s_en_MT*electron_thermal; // have to multiply by n_e for nu_ne_MT
-		nu_ni_MT_over_n = s_in_MT*ionneut_thermal;
-		nu_eiBar = nu_eiBarconst*kB_to_3halves*nT_ion_use.n*lnLambda/(nT_elec_use.T*sqrt_Te);
-		nu_ieBar = nT_elec_use.n*nu_eiBar/nT_ion_use.n;
-		nu_eHeart = 1.87*nu_eiBar + 
-						nT_neut_use.n*s_en_visc*electron_thermal;
-	}
-	
-	// From here on doing the inter-species heat exchange:
-	Tensor3 Tens1; 	
-	{
-		f64 M_in = m_n*m_ion/((m_n+m_ion)*(m_n+m_ion));
-		f64 M_en = m_n*m_e/((m_n+m_e)*(m_n+m_e));
-		f64 M_ie = m_ion*m_e/((m_ion+m_e)*(m_ion+m_e));
-		
-		// See section 10.3.1, June 2016 doc.
-		// Seems good idea to do this in heat, or manipulate equivalently.
-		
-		// d/dt(NT) = U NT
-		// Add to the RH vector, h*0.5*U*NT_k:
-		Tens1.xx = -2.0*(M_in*nu_ni_MT_over_n*nT_ion_use.n + M_en*nu_ne_MT_over_n*nT_elec_use.n);
-		Tens1.xy = 2.0*M_in*nu_ni_MT_over_n*nT_neut_use.n;
-		Tens1.xz = 2.0*M_en*nu_ne_MT_over_n*nT_neut_use.n;
-		
-		Tens1.yx = 2.0*M_in*nu_ni_MT_over_n*nT_ion_use.n;
-		Tens1.yy = -2.0*(M_in*nu_ni_MT_over_n*nT_neut_use.n
-			           + M_ie*nu_ieBar);
-		Tens1.yz = 2.0*M_ie*nu_eiBar;
-		
-		Tens1.zx = 2.0*M_en*nu_ne_MT_over_n*nT_elec_use.n;
-		Tens1.zy = 2.0*M_ie*nu_ieBar;
-		Tens1.zz = -2.0*(M_ie*nu_eiBar + M_en*nu_ne_MT_over_n*nT_neut_use.n);
-	}
-	
-	// Midpoint: 
-	// d/dt (nT) = U
-	// (nT)_k+1 = (1 - h/2 U)^-1 (1+h/2 U) (nT)_k
-	
-	nnTn += h*0.5*(Tens1.xx*(nT_neut_src.n*nT_neut_src.T)
-				   + Tens1.xy*(nT_ion_src.n*nT_ion_src.T)
-				   + Tens1.xz*(nT_elec_src.n*nT_elec_src.T)
-				   );
-	niTi += h*0.5*(Tens1.yx*(nT_neut_src.n*nT_neut_src.T)
-				   + Tens1.yy*(nT_ion_src.n*nT_ion_src.T)
-				   + Tens1.yz*(nT_elec_src.n*nT_elec_src.T)
-				   );
-	neTe += h*0.5*(Tens1.zx*(nT_neut_src.n*nT_neut_src.T)
-				   + Tens1.zy*(nT_ion_src.n*nT_ion_src.T)
-				   + Tens1.zz*(nT_elec_src.n*nT_elec_src.T)
-				   );
-	
-	// Matrix is 1 - h*0.5*U
-	
-	Tens1.xx = 1.0-h*0.5*Tens1.xx;
-	Tens1.xy = -h*0.5*Tens1.xy;
-	Tens1.xz = -h*0.5*Tens1.xz;
-	
-	Tens1.yx = -h*0.5*Tens1.yx;
-	Tens1.yy = 1.0-h*0.5*Tens1.yy;
-	Tens1.yz = -h*0.5*Tens1.yz;
-	
-	Tens1.zx = -h*0.5*Tens1.zx;
-	Tens1.zy = -h*0.5*Tens1.zy;
-	Tens1.zz = 1.0-h*0.5*Tens1.zz;
-	
-	
-	if ((OUTPUT) && (index == REPORT)) {
-			printf("nT_before %1.5E %1.5E %1.5E \n",
-				nnTn,niTi,neTe);
-		};
-	{
-		Tensor3 Tens2;
-		Tens1.Inverse(Tens2);
-		Vector3 RH,LH;
-		RH.x = nnTn;
-		RH.y = niTi;
-		RH.z = neTe;
-		LH = Tens2*RH;
-		nnTn = LH.x;
-		niTi = LH.y;
-		neTe = LH.z;				
-	}
-	if ((OUTPUT) && (index == REPORT)) {
-			printf("nT_after %1.5E %1.5E %1.5E \n",
-				nnTn,niTi,neTe);
 	};
-	// END OF COMMENT
-
-
-	// Overwrite any old rubbish in memory so that we can save off the output:
-	nT_neut_use.n = n_n_plus;
-	nT_neut_use.T = nnTn/n_n_plus;
-	nT_ion_use.n = n_ion_plus;
-	nT_ion_use.T = niTi/n_ion_plus;
-	nT_elec_use.n = n_e_plus;
-	nT_elec_use.T = neTe/n_e_plus;	
-	if (b2ndPass == false) {
-		// Tween back to halfway if this is the first pass:
-		nT_neut_use.n = 0.5*(nT_neut_src.n + nT_neut_use.n);
-		nT_ion_use.n = 0.5*(nT_ion_src.n + nT_ion_use.n);
-		nT_elec_use.n = 0.5*(nT_elec_src.n + nT_elec_use.n);
-		nT_neut_use.T = 0.5*(nT_neut_src.T + nT_neut_use.T);
-		nT_ion_use.T = 0.5*(nT_ion_src.T + nT_ion_use.T);
-		nT_elec_use.T = 0.5*(nT_elec_src.T + nT_elec_use.T);
-	};
-	
-	//if ((OUTPUT) && (index == REPORT))
-	//	printf("Te %1.5E \n################\n",nT_elec_use.T);
-	// */ this was the end of commenting
 
 	p_nT_neut_out[index] = nT_neut_use;
 	p_nT_ion_out[index] = nT_ion_use;

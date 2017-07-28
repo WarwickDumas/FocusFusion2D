@@ -94,7 +94,7 @@
 #define SIXTH 0.166666666666667
 #define TWELTH 0.083333333333333
 #define FIVETWELTHS 0.416666666666667
-#define REPORT 69500
+#define REPORT 30275
 #define DEVICE_INSULATOR_OUTER_RADIUS 3.44
 
 #include "cuda_struct.h"
@@ -165,7 +165,6 @@ f64 inline GetEzShape_(f64 r) {
 
 // Device-accessible constants not known at compile time:
 __constant__ long nBlocks, Nverts, uDataLen_d; // Nverts == numVertices
-
 __constant__ f64_tens2 Anticlockwise2, Clockwise2; // use this to do rotation.
 
 // Set from host constant definitions:
@@ -261,24 +260,129 @@ real GetIzPrescribed(real const t)
 nn * p_nn_host;
 f64_vec3 * p_MAR_ion_host, * p_MAR_neut_host, * p_MAR_elec_host;
 
-void Systdata::AsciiOutput (const char filename[]) const 
+void Systdata::AsciiOutput (const char file_ident[]) const 
 {
-	FILE * file = fopen(filename,"w");
-	if (file == 0) {
-		printf("could not open %s",filename);
+	char filename1[256];
+	char filename2[256];
+	char filename3[256];
+	sprintf(filename1,"%s_ins.txt",file_ident);
+	sprintf(filename2,"%s_dom.txt",file_ident);
+	sprintf(filename3,"%s_vert.txt",file_ident);
+
+	FILE * file, * file1, * file2;
+
+	file1 = fopen(filename1,"w");
+	if (file1 == 0) {
+		printf("could not open %s",filename1);
 		getch();
 		getch();
 		return;
 	} ;
-	printf("%s opened",filename);
+	printf("%s opened",filename1);
+	file2 = fopen(filename2,"w");
+	if (file2 == 0) {
+		printf("could not open %s",filename2);
+		getch();
+		getch();
+		return;
+	} ;
+	printf("%s opened",filename2);
 	
+
+	fprintf(file1,"index flag | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
+		"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
+		"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
+		"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
+		"GradTe_x GradTe_y phi | x y \n");
+	fprintf(file2,"index flag | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
+		"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
+		"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
+		"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
+		"GradTe_x GradTe_y phi | x y \n");
+
+	for (int iMinor = 0; iMinor < BEGINNING_OF_CENTRAL; iMinor++)
+	{
+		f64 temp1;
+	//	cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
+	//	sizeof(f64_vec3),			cudaMemcpyDeviceToHost);
+		
+		if (iMinor % 500 == 0) printf("%d ",iMinor);
+		
+		int flag = this->p_tri_perinfo[iMinor].flag;
+		
+		if ( (flag == CROSSING_INS) || (flag == DOMAIN_TRIANGLE) || (flag == OUTER_FRILL)) 
+		{
+			file = file2;
+		} else {
+			file = file1;
+		};
+
+		fprintf(file,"%d %d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
+			" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
+			iMinor, flag,
+			this->p_nT_neut_minor[iMinor].n,this->p_nT_neut_minor[iMinor].T,
+			this->p_nT_ion_minor[iMinor].n,this->p_nT_ion_minor[iMinor].T,
+			this->p_nT_elec_minor[iMinor].n,this->p_nT_elec_minor[iMinor].T,
+			p_nn_host[iMinor].n_ionise, p_nn_host[iMinor].n_recombine,
+			this->p_B[iMinor].x,this->p_B[iMinor].y,this->p_B[iMinor].z,
+			this->p_v_neut[iMinor].x,this->p_v_neut[iMinor].y,this->p_v_neut[iMinor].z,
+			this->p_v_ion[iMinor].x,this->p_v_ion[iMinor].y,this->p_v_ion[iMinor].z,
+			this->p_v_elec[iMinor].x,this->p_v_elec[iMinor].y,this->p_v_elec[iMinor].z
+			);
+			
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | %1.14E | ",
+			this->p_grad_phi[iMinor].x,this->p_grad_phi[iMinor].y,
+			this->p_Lap_A[iMinor].x,this->p_Lap_A[iMinor].y,this->p_Lap_A[iMinor].z,
+			this->p_A[iMinor].z,
+			this->p_Adot[iMinor].x,this->p_Adot[iMinor].y,this->p_Adot[iMinor].z,
+			0.0);
+			//temp1);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E ",
+			p_MAR_neut_host[iMinor].x,p_MAR_neut_host[iMinor].y,p_MAR_neut_host[iMinor].z);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E ",
+			p_MAR_ion_host[iMinor].x,p_MAR_ion_host[iMinor].y,p_MAR_ion_host[iMinor].z);
+		
+		fprintf(file,	
+			" %1.14E %1.14E %1.14E | ",
+			p_MAR_elec_host[iMinor].x,p_MAR_elec_host[iMinor].y,p_MAR_elec_host[iMinor].z);
+		
+		fprintf(file,		" %1.14E %1.14E ",
+			this->p_GradTe[iMinor].x,this->p_GradTe[iMinor].y);
+		
+		if (iMinor < BEGINNING_OF_CENTRAL) {
+			fprintf(file," -- | %1.10E %1.10E ",this->p_tri_centroid[iMinor].x,this->p_tri_centroid[iMinor].y);
+		} else {
+			fprintf(file," %1.10E | %1.10E %1.10E ",
+				this->p_phi[iMinor-BEGINNING_OF_CENTRAL],
+				this->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.x,
+				this->p_info[iMinor-BEGINNING_OF_CENTRAL].pos.y);
+		};
+		fprintf(file,"\n");
+	};
+	fclose(file1);
+	fclose(file2);
+	
+	file = fopen(filename3,"w");
+	if (file == 0) {
+		printf("could not open %s",filename3);
+		getch();
+		getch();
+		return;
+	} ;
+	printf("%s opened",filename3);
+
 	fprintf(file,"index flag | n_neut T_neut n_ion T_ion n_elec T_elec | ionise recombine | "
 		"Bx By Bz | vnx vny vnz vix viy viz vex vey vez | "
 		"gradphi_x gradphi_y Lap_A_x Lap_A_y Lap_A_z Az Adot_x Adot_y Adot_z | X1_Adot_z | "
 		"MAR_neutx MAR_neuty MAR_neutz MAR_ionx MAR_iony MAR_ionz MAR_elecx MAR_elecy MAR_elecz | "
-		"GradTe_x GradTe_y phi \n");
-	
-	for (int iMinor = 0; iMinor < this->Nminor; iMinor++)
+		"GradTe_x GradTe_y phi | x y \n");
+
+	for (int iMinor = BEGINNING_OF_CENTRAL; iMinor < this->Nminor; iMinor++)
 	{
 		f64 temp1;
 	//	cudaMemcpy(&temp1, pX1->p_Adot+iMinor, 
@@ -331,7 +435,7 @@ void Systdata::AsciiOutput (const char filename[]) const
 			this->p_GradTe[iMinor].x,this->p_GradTe[iMinor].y);
 		
 		if (iMinor < BEGINNING_OF_CENTRAL) {
-			fprintf(file," %1.10E %1.10E ",this->p_tri_centroid[iMinor].x,this->p_tri_centroid[iMinor].y);
+			fprintf(file," -- | %1.10E %1.10E ",this->p_tri_centroid[iMinor].x,this->p_tri_centroid[iMinor].y);
 		} else {
 			fprintf(file," %1.10E | %1.10E %1.10E ",
 				this->p_phi[iMinor-BEGINNING_OF_CENTRAL],
@@ -341,7 +445,6 @@ void Systdata::AsciiOutput (const char filename[]) const
 		fprintf(file,"\n");
 	};
 	fclose(file);
-	
 }
 
 
@@ -401,7 +504,7 @@ void PerformCUDA_Advance_2 (
 {
 	// Preliminaries:
 	
-	char buffer[256];
+	char buffer[256], str[256];
 	FILE * fpdebug;
 	
 	long iVertex;
@@ -667,7 +770,7 @@ void PerformCUDA_Advance_2 (
 	// Now copy across to the other systems we initialized.
 
 	CallMAC(cudaMemcpy(Systhalf.p_info, Syst1.p_info, numVertices*sizeof(structural), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Systhalf.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Systhalf.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Nminor*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Systhalf.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
@@ -681,7 +784,7 @@ void PerformCUDA_Advance_2 (
 	// that we should just have 1 copy of this really.
 
 	CallMAC(cudaMemcpy(Syst2.p_info, Syst1.p_info, numVertices*sizeof(structural), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(Syst2.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(Syst2.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Nminor*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(Syst2.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
@@ -692,7 +795,7 @@ void PerformCUDA_Advance_2 (
 	CallMAC(cudaMemcpy(Syst2.pPBCneigh, Syst1.pPBCneigh,numVertices*MAXNEIGH_d*sizeof(char),cudaMemcpyDeviceToDevice));
 	
 	CallMAC(cudaMemcpy(SystAdv.p_info, Syst1.p_info, numVertices*sizeof(structural), cudaMemcpyDeviceToDevice));
-	CallMAC(cudaMemcpy(SystAdv.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
+	CallMAC(cudaMemcpy(SystAdv.p_tri_perinfo, Syst1.p_tri_perinfo, Syst1.Nminor*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.p_tri_corner_index, Syst1.p_tri_corner_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.p_tri_per_neigh, Syst1.p_tri_per_neigh, Syst1.Ntris*sizeof(CHAR4), cudaMemcpyDeviceToDevice));
 	CallMAC(cudaMemcpy(SystAdv.p_neigh_tri_index, Syst1.p_neigh_tri_index, Syst1.Ntris*sizeof(LONG3), cudaMemcpyDeviceToDevice));
@@ -1054,9 +1157,8 @@ void PerformCUDA_Advance_2 (
 	// End debug
 	
 	SendToHost(pX1, pX1, pX_host);
-	pX_host->AsciiOutput("inputs_pX1.txt");
+	pX_host->AsciiOutput("inputs_pX1");
 	printf("done ascii output of pX1\n\n");
-	getch();
 
 	int iSubstep;
 	for (iSubstep = 0; iSubstep < numSubsteps; iSubstep++)
@@ -1213,8 +1315,6 @@ void PerformCUDA_Advance_2 (
 		
 		f64 Vhalf = pX1->EzTuning*3.5*(GetIzPrescribed(thalf)/GetIzPrescribed(t));
 		printf("EzTuning = %1.5E , V = %1.15E Vhalf = %1.15E \n",pX1->EzTuning,V,Vhalf);	// guesstimate 
-
-		getch();
 
 		Kernel_Advance_Antiadvect_phi<<<numTilesMajor,threadsPerTileMajor>>>
 			(
@@ -1716,8 +1816,6 @@ void PerformCUDA_Advance_2 (
 			); // works on DOMAIN_VERTEX only
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");
 		
-		printf("done GTPC\n");
-		
 		
 		// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 		// It might be reasonable to instead be using TRIANGLE nT in getting
@@ -1770,10 +1868,7 @@ void PerformCUDA_Advance_2 (
 		// Therefore nn_ionrec logically is organised with major/central values at the end.
 		
 		// Now run midpoint v step on minor cells.
-		
-		printf("about to do midpoint.\n");
-		getch();
-		
+				
 		// I think for debugging it would be good here to dump all the inputs to host
 		// and spit it out to a spreadsheet.
 		
@@ -1789,8 +1884,9 @@ void PerformCUDA_Advance_2 (
 		//	temp1,temp2,nTtemp3.T,nTtemp4.T);
 		//getch();
 		
-		SendToHost(pXhalf, pXhalf, pX_host);		
-		pX_host->AsciiOutput("Inputs_half.txt");
+		SendToHost(pXhalf, pXhalf, pX_host);
+		sprintf(str,"Inputs_advhalf_%d_",iSubstep);
+	//	pX_host->AsciiOutput(str);
 		
 		printf("start midpt step:\n");
 		pXhalf->evaltime = pX1->evaltime + 0.5*hstep;
@@ -1847,9 +1943,7 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize MidptAccel 1");
 		
-		printf("midpt 1 done.");
-		getch();
-
+		printf("midpt 1 done.\n\n");
 		// The amount of resistive heating depends on Ez of course...
 		// but we don't want to have to run twice at this juncture.
 		// Therefore?		
@@ -1899,6 +1993,8 @@ void PerformCUDA_Advance_2 (
 		
 		printf("Heating 1 done\n");
 		
+		while(1) getch();
+
 		//cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
 	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
 	//	Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
@@ -2031,14 +2127,10 @@ void PerformCUDA_Advance_2 (
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize splitout nn");
 
 		SendToHost(pXusable,pXhalf,pX_host);
-
-		pX_host->AsciiOutput("inputs_3__.txt");
-		// v and gradphi come back as IND / viz,vez INF.
+		sprintf(str,"input_to_pass2_%d",iSubstep);
+		pX_host->AsciiOutput(str);
 
 		// Establish Ohmic relationship:
-		printf("ready to do midpt again\n");
-		getch();
-
 		pXusable->evaltime = pXhalf->evaltime;
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
 		(
@@ -2077,7 +2169,7 @@ void PerformCUDA_Advance_2 (
 			p_MAR_elec, // assume take integral(-grad(nT))/m_s
 			pXusable->p_GradTe,
 
-			// output: not used, of course
+			// output: not used !
 			pXusable->p_v_neut,
 			pXusable->p_v_ion,
 			pXusable->p_v_elec,
@@ -2108,12 +2200,14 @@ void PerformCUDA_Advance_2 (
 		// Set pXhalf->EzTuning:
 		pXhalf->EzTuning = pX1->EzTuning + (Iz_prescribed-Iz0)/IzPerEzTuning;
 		
-		printf("pX1->EzTuning %1.8E Iz_prescribed %1.8E \n"
-			"Iz0 %1.8E IzPerEzTuning %1.8E \n"
-			"pXhalf->EzTuning %1.8E \n",
+		printf("pX1->EzTuning %1.9E Iz_prescribed %1.9E \n"
+			"Iz0 %1.9E IzPerEzTuning %1.9E \n"
+			"pXhalf->EzTuning %1.9E \nPRESS T\n\n",
 			pX1->EzTuning,Iz_prescribed, Iz0, IzPerEzTuning,
 			pXhalf->EzTuning);
-		getch();
+		
+		char o = '0';
+		while ((o != 't') && (o != 'T')) o = getch();
 
 		// Call with same parameters over again:
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
@@ -2164,7 +2258,6 @@ void PerformCUDA_Advance_2 (
 		};
 		printf("Iz attained %1.8E Presc %1.8E Diff %1.4E\n",
 			Iz0,Iz_prescribed,Iz0-Iz_prescribed);
-		getch();
 		// Can double-check here that Iz is being achieved:
 		
 		Kernel_Heating_routine<<<numTilesMajor,threadsPerTileMajor>>>(
@@ -2209,10 +2302,14 @@ void PerformCUDA_Advance_2 (
 										pXusable->p_nT_ion_minor,
 										pXusable->p_nT_elec_minor);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXusable");
-		
-		printf("end");
-		while(1) getch();
 
+		
+		SendToHost(pXusable,pXhalf,pX_host);
+		sprintf(str,"output_pass3_%d",iSubstep);
+		pX_host->AsciiOutput(str);
+
+
+		// ==================
 
 		// We now created pXusable -> n,v,T and Adot. pXhalf->EzTuning.
 		
@@ -2398,7 +2495,7 @@ void PerformCUDA_Advance_2 (
 			pXusable->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
 			pXusable->p_nT_neut_minor,
 			pX2->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
-			pXusable->p_v_neut + BEGINNING_OF_CENTRAL,
+			pXusable->p_v_neut,
 			pXusable->p_v_overall,
 			pXhalf->pIndexTri,
 			pXhalf->pPBCtri,
@@ -2435,7 +2532,7 @@ void PerformCUDA_Advance_2 (
 			pXusable->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
 			pXusable->p_nT_ion_minor,
 			pX2->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
-			pXusable->p_v_ion + BEGINNING_OF_CENTRAL,
+			pXusable->p_v_ion,
 			pXusable->p_v_overall,
 			pXhalf->pIndexTri,
 			pXhalf->pPBCtri,
@@ -2473,7 +2570,7 @@ void PerformCUDA_Advance_2 (
 			pXusable->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
 			pXusable->p_nT_elec_minor,
 			pX2->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-			pXusable->p_v_elec + BEGINNING_OF_CENTRAL,
+			pXusable->p_v_elec,
 			pXusable->p_v_overall,
 			pXhalf->pIndexTri,
 			pXhalf->pPBCtri,
@@ -2524,8 +2621,14 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Advance_Antiadvect_phidot II");
 			
+		SendToHost(pX2,pX2,pX_host);
+		sprintf(str,"output_pX2_%d",iSubstep);
+		pX_host->AsciiOutput(str);
+
 		pX2->evaltime = pXusable->evaltime + hstep*0.5;
 		
+		printf("done a step.\n====================================================\n");
+		getch();
 		
 		// Document sequence with inputs labelled fully and showing where calc'd.
 		// Then check that the calcs are as claimed in each routine.

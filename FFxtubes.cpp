@@ -1965,6 +1965,12 @@ void TriMesh::PopulateSystdata_from_this( Systdata * pSystdata )
 		// Set for central minor:
 		pSystdata->p_tri_perinfo[iVertex + BEGINNING_OF_CENTRAL].flag =  (short)(pVertex->flags);
 		
+		if (iVertex + BEGINNING_OF_CENTRAL == 80000) {
+			printf("iVertex %d pVertex->flags %d pos %f %f \n",
+				iVertex,pVertex->flags,pVertex->pos.x,pVertex->pos.y);
+			getch();
+		};
+
 		pSystdata->p_info[iVertex].neigh_len = (short)neigh_len;
 		pSystdata->p_info[iVertex].pos = pVertex->pos;
 		
