@@ -94,7 +94,7 @@
 #define SIXTH 0.166666666666667
 #define TWELTH 0.083333333333333
 #define FIVETWELTHS 0.416666666666667
-#define REPORT 30275
+#define REPORT 31356
 #define DEVICE_INSULATOR_OUTER_RADIUS 3.44
 
 #include "cuda_struct.h"
@@ -316,7 +316,7 @@ void Systdata::AsciiOutput (const char file_ident[]) const
 		} else {
 			file = file1;
 		};
-
+		
 		fprintf(file,"%d %d | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E |  %1.14E %1.14E | "
 			" %1.14E %1.14E %1.14E | %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E %1.14E | ",
 			iMinor, flag,
@@ -508,7 +508,7 @@ void PerformCUDA_Advance_2 (
 	FILE * fpdebug;
 	
 	long iVertex;
-	Systdata * pX1,*pX2,*pXhalf,*pXusable;
+	Systdata * pX1,*pX2,*pXhalf,*pXusable, *tempptr;
 	real * p_summands_host, * p_Iz0_summands_host, *p_scratch, *p_Iz0_initial_host, * p_scratch_host;
 	structural * p_scratch_info;
 	int iSubsubstep;
@@ -518,17 +518,15 @@ void PerformCUDA_Advance_2 (
 	
 	real evaltime = pX_host->evaltime;
 	real t = evaltime;
-
+	
 	printf("pXhost->p_Adot[20000 + BEGINNING_OF_CENTRAL].z %1.10E\n",pX_host->p_Adot[20000 + BEGINNING_OF_CENTRAL].z);
-
+	
 	printf("sizeof(CHAR4): %d \n"
 		"sizeof(structural): %d \n"
 		"sizeof(LONG3): %d \n"
 		"sizeof(nn): %d \n",
 		   sizeof(CHAR4),sizeof(structural),sizeof(LONG3),sizeof(nn));
-	getch();
-
-
+	
 	if (Syst1.bInvoked == false) {
 		
 		Call(cudaMemGetInfo (&uFree,&uTotal),"cudaMemGetInfo (&uFree,&uTotal)");
@@ -543,57 +541,29 @@ void PerformCUDA_Advance_2 (
 		printf("After Invokes: uFree %d uTotal %d\n",uFree,uTotal);
 	}
 	
-	// -----  What needs to change in all this stuff?  -----
-	
 	// Populate video constant memory:
 	// ________________________________
 	
 	long * address;
 	f64 * f64address;
 	
-	// not used? :
-
-//	Call(cudaGetSymbolAddress((void **)(&address),Nverts), 
-//		"cudaGetSymbolAddress((void **)(&address),Nverts)");
-//	Call(cudaMemcpy( address, &numVertices, sizeof(long),cudaMemcpyHostToDevice),
-//		"cudaMemcpy( address, &numVertices, sizeof(long),cudaMemcpyHostToDevice) 2 ");
-// good
-	
-	//memcpy(IndexNeigh,pIndexNeigh + long_neighs_stride*index,long_neighs_stride);
-	//memcpy(PBCNeigh,pPBCneigh + char_neighs_stride*index,char_neighs_stride);
-	
-	// Eventually change this :
-	//long MaxNeigh = MAXNEIGH_d;
-	//CallMAC(cudaGetSymbolAddress((void **)(&address),MAXNEIGH_d));
-	//CallMAC(cudaMemcpy( address, &MaxNeigh, sizeof(long),cudaMemcpyHostToDevice));
-	
-	// not used:
-	//Call(cudaGetSymbolAddress((void **)(&address),uDataLen_d), 
-	//	"cudaGetSymbolAddress((void **)(&address),uDataLen_d)");
-	//Call(cudaMemcpy( address, &numDataLen, sizeof(long),cudaMemcpyHostToDevice),
-	//	"cudaMemcpy( address, &numDataLen, sizeof(long),cudaMemcpyHostToDevice) 3 ");
-	
-	//Tensor2 const Anticlockwise(cos(FULLANGLE),-sin(FULLANGLE),sin(FULLANGLE),cos(FULLANGLE));
 	f64_tens2 anticlock2;
-	// Note that objects appearing in constant memory must have empty constructor & destructor.
 	anticlock2.xx = cos(FULLANGLE);
 	anticlock2.xy = -sin(FULLANGLE);
 	anticlock2.yx = sin(FULLANGLE);
 	anticlock2.yy = cos(FULLANGLE);
-	
 	Tensor2 * T2address;
 	Call(cudaGetSymbolAddress((void **)(&T2address),Anticlockwise2), 
 		"cudaGetSymbolAddress((void **)(&T2address),Anticlockwise2)");
 	Call(cudaMemcpy( T2address, &anticlock2, sizeof(f64_tens2),cudaMemcpyHostToDevice),
 		"cudaMemcpy( T2address, &anticlock2, sizeof(f64_tens2),cudaMemcpyHostToDevice) U");
+	// Note that objects appearing in constant memory must have empty constructor & destructor.
 	
 	f64_tens2 clock2;
-	// Note that objects appearing in constant memory must have empty constructor & destructor.
 	clock2.xx = cos(FULLANGLE);
 	clock2.xy = sin(FULLANGLE);
 	clock2.yx = -sin(FULLANGLE);
 	clock2.yy = cos(FULLANGLE);
-	
 	Call(cudaGetSymbolAddress((void **)(&T2address),Clockwise2), 
 		"cudaGetSymbolAddress((void **)(&T2address),Clockwise2)");
 	Call(cudaMemcpy( T2address, &clock2, sizeof(f64_tens2),cudaMemcpyHostToDevice),
@@ -604,10 +574,6 @@ void PerformCUDA_Advance_2 (
 	//long past_end = numEndZCurrentRow+1;
 	//CallMAC(cudaGetSymbolAddress((void **)(&address),ReverseJzIndexEnd));
 	//CallMAC(cudaMemcpy( address, &past_end, sizeof(long),cudaMemcpyHostToDevice));
-	
-
-	//// numEndZCurrentRow = numVertices-1; // the previous one.
-	//// numStartZCurrentRow = numVertices-numRow[numRow1];
 	
 	// For floating point constants you have two choices:
 	// 1. #define MAY be faster, but can only be used if no danger of
@@ -639,7 +605,7 @@ void PerformCUDA_Advance_2 (
 	// Supposedly things will now be easier since device constants have the 
 	// easiest labels.
 	// Granted some of these could safely be #define.
-
+	
 	f64 temp;
 	temp = 1.0/(sqrt(2.0)*2.09e7);
 	Set_f64_constant(Nu_ii_Factor,temp);
@@ -667,9 +633,9 @@ void PerformCUDA_Advance_2 (
 //	Set_f64_constant(AVGFAC_d,AVGFAC);
 //	Set_f64_constant(ABSTHRESHFLUX_SQ_d,ABSTHRESHFLUX_SQ);
 //	Set_f64_constant(ENDPT_MAXERRPPN_SQ_d,ENDPT_MAXERRPPN_SQ);
-
+	
 	// These have to be set if doing that type of controlling the flux change.
-
+	
 	Call(cudaMemcpyToSymbol(cross_T_vals_d,cross_T_vals, 10*sizeof(f64)),
 		"cudaMemcpyToSymbol(cross_T_vals_d,cross_T_vals, 10*sizeof(f64))");
 	Call(cudaMemcpyToSymbol(cross_s_vals_viscosity_ni_d,cross_s_vals_viscosity_ni,
@@ -713,7 +679,7 @@ void PerformCUDA_Advance_2 (
 	p_scratch = (f64 *)malloc((numVertices+1000)*sizeof(f64));
 	p_scratch_info = (structural *)malloc((numVertices+1000)*sizeof(structural));
 	p_scratch_host = (f64 *)malloc((pX_host->Nminor+1000)*sizeof(f64));
-
+	
 	p_nn_host = (nn *)malloc(pX_host->Nminor*sizeof(nn));
 	p_MAR_neut_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
 	p_MAR_ion_host = (f64_vec3 *)malloc(pX_host->Nminor*sizeof(f64_vec3));
@@ -739,13 +705,12 @@ void PerformCUDA_Advance_2 (
 	Syst2.OutermostFrillCentroidRadius = Syst1.OutermostFrillCentroidRadius;
 	SystAdv.InnermostFrillCentroidRadius = Syst1.InnermostFrillCentroidRadius;
 	SystAdv.OutermostFrillCentroidRadius = Syst1.OutermostFrillCentroidRadius;
-
+	
 	Syst1.EzTuning = pX_host->EzTuning; // fail?
 		
 	printf("Syst1.Ez %1.9E pX_host Ez %1.9E \n",
 		Syst1.EzTuning,pX_host->EzTuning);
-	getch();
-
+	
 	CallMAC(cudaMemcpy(Syst1.p_nT_neut_minor, pX_host->p_nT_neut_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_nT_ion_minor, pX_host->p_nT_ion_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
 	CallMAC(cudaMemcpy(Syst1.p_nT_elec_minor, pX_host->p_nT_elec_minor, Syst1.Nminor*sizeof(nT), cudaMemcpyHostToDevice));
@@ -892,9 +857,9 @@ void PerformCUDA_Advance_2 (
 	cudaEventRecord(start,0);
 			
 // _____________________________________________________________________________
-
+	
 	// Kernel calling code:
-
+	
 	// k1 ln 2.8 + k2 = -V
 	// k1 ln 4.6 + k2 = V
 	// 2V/(ln 4.6-ln 2.8) = k1
@@ -918,7 +883,6 @@ void PerformCUDA_Advance_2 (
 	//	"==============================================\n",
 	//	tempf64,k1,k2);
 	// First thing is to see why this is zero, then see why #IND in Xhalf.
-	
 	
 	Kernel_CalculateTriMinorAreas_AndCentroids<<<numTriTiles, threadsPerTileMinor>>>		
 		(
@@ -982,7 +946,7 @@ void PerformCUDA_Advance_2 (
 	//}
 	//fclose(fp);
 	//printf("Areasum_major old %1.12E \n",areasum);
-
+	
 	Kernel_CalculateMajorAreas<<<numTilesMajor,threadsPerTileMajor>>>(
 			pX1->p_info,
 			pX1->p_tri_centroid,
@@ -991,18 +955,6 @@ void PerformCUDA_Advance_2 (
 			pX1->p_area
 			);
 	Call(cudaThreadSynchronize(),"cudaThreadSynchronize CalculateMajorAreas");
-	
-	FILE * fp = fopen("newareas.txt","w");
-	CallMAC(cudaMemcpy(p_scratch_host,pX1->p_area,sizeof(f64)*pX1->Nverts,cudaMemcpyDeviceToHost));
-	f64 areasum = 0.0;
-	for (int iTest = 0; iTest < pX1->Nverts; iTest++)
-	{
-		areasum += p_scratch_host[iTest];
-		fprintf(fp,"%d %1.15E\n",iTest,p_scratch_host[iTest]);
-	}
-	fclose(fp);
-	printf("Areasum_major II %1.12E \n",areasum);
-	
 	
 	// The number of triangles will not be exactly numTriTiles*threadsPerTileMinor.
 	// THAT WOULD BE VERY BAD NEWS: It means that the array has a hole in it!!
@@ -1064,11 +1016,6 @@ void PerformCUDA_Advance_2 (
 		Iz0 += p_summands_host[ii];
 	};	
 	printf("Iz after areas %1.12E \n",Iz0);
-	getch();
-
-
-	// DEBUG  :
-	// ========
 
 	::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
 		(
@@ -1150,23 +1097,20 @@ void PerformCUDA_Advance_2 (
 		p_MAR_ion + BEGINNING_OF_CENTRAL,
 		p_MAR_elec + BEGINNING_OF_CENTRAL
 		); // works on DOMAIN_VERTEX only
-	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");
-	
-	printf("done GTPC\n");
+	Call(cudaThreadSynchronize(),"cudaThreadSynchronize Thermal pressure");	
+	printf("done GetThermalPressureCentrals\n");
 		
-	// End debug
+	//SendToHost(pX1, pX1, pX_host);
+	//pX_host->AsciiOutput("inputs_pX1");
+	//printf("done ascii output of pX1\n\n");
 	
-	SendToHost(pX1, pX1, pX_host);
-	pX_host->AsciiOutput("inputs_pX1");
-	printf("done ascii output of pX1\n\n");
+	FILE * fileEz = fopen("Ez1000.txt","w");
 
 	int iSubstep;
 	for (iSubstep = 0; iSubstep < numSubsteps; iSubstep++)
 	{
 		printf("Step %d / %d : ",iSubstep,numSubsteps);
-
-		// First set up Iz_presc_1/2 etc:
-	
+		// First set up Iz_presc_1/2 etc:		
 		f64 thalf = t + hstep*0.5;
 		// Set ReverseJz before each call to Advance Potentials.
 		f64 Iz_prescribed = GetIzPrescribed(thalf);
@@ -1176,7 +1120,6 @@ void PerformCUDA_Advance_2 (
 		// HOWEVER, we also aim for Iz_prescribed
 		// So we need to set up 2 different variables.
 		Iz_prescribed = GetIzPrescribed(t+hstep);
-		
 		::Kernel_Average_nT_to_tri_minors<<<numTriTiles,threadsPerTileMinor>>>(
 			//pX1->p_info,
 			pX1->p_tri_corner_index,
@@ -1188,7 +1131,6 @@ void PerformCUDA_Advance_2 (
 			);
 		// If one of the corners is an outermost then outermost n should be pop'd with benign value.
 		// At insulator-crossing tri we require having set n = 0 inside insulator.
-		
 		Kernel_GetZCurrent<<<numTilesMinor,threadsPerTileMinor>>>(
 			pX1->p_tri_perinfo,
 			pX1->p_nT_ion_minor,
@@ -1315,7 +1257,6 @@ void PerformCUDA_Advance_2 (
 		
 		f64 Vhalf = pX1->EzTuning*3.5*(GetIzPrescribed(thalf)/GetIzPrescribed(t));
 		printf("EzTuning = %1.5E , V = %1.15E Vhalf = %1.15E \n",pX1->EzTuning,V,Vhalf);	// guesstimate 
-
 		Kernel_Advance_Antiadvect_phi<<<numTilesMajor,threadsPerTileMajor>>>
 			(
 				pX1->p_info, // for innermost & outermost, set = +-V:,
@@ -1328,7 +1269,7 @@ void PerformCUDA_Advance_2 (
 				pXhalf->p_phi
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Antiadvect_phi.");
-		
+	
 		::Kernel_Populate_A_frill<<<numTriTiles, threadsPerTileMinor>>>
 			(
 				pX1->p_tri_perinfo,
@@ -1884,8 +1825,8 @@ void PerformCUDA_Advance_2 (
 		//	temp1,temp2,nTtemp3.T,nTtemp4.T);
 		//getch();
 		
-		SendToHost(pXhalf, pXhalf, pX_host);
-		sprintf(str,"Inputs_advhalf_%d_",iSubstep);
+	//	SendToHost(pXhalf, pXhalf, pX_host);
+	//	sprintf(str,"Inputs_advhalf_%d_",iSubstep);
 	//	pX_host->AsciiOutput(str);
 		
 		printf("start midpt step:\n");
@@ -1944,6 +1885,7 @@ void PerformCUDA_Advance_2 (
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize MidptAccel 1");
 		
 		printf("midpt 1 done.\n\n");
+		
 		// The amount of resistive heating depends on Ez of course...
 		// but we don't want to have to run twice at this juncture.
 		// Therefore?		
@@ -1992,9 +1934,6 @@ void PerformCUDA_Advance_2 (
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXusable");
 		
 		printf("Heating 1 done\n");
-		
-		while(1) getch();
-
 		//cudaMemcpy(p_MAR_ion_host,				p_MAR_ion,
 	//		sizeof(f64_vec3)*Syst1.Nminor,			cudaMemcpyDeviceToHost);
 	//	Call(cudaThreadSynchronize(),"cudaThreadSynchronize memcpies");
@@ -2126,9 +2065,9 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize splitout nn");
 
-		SendToHost(pXusable,pXhalf,pX_host);
-		sprintf(str,"input_to_pass2_%d",iSubstep);
-		pX_host->AsciiOutput(str);
+	//	SendToHost(pXusable,pXhalf,pX_host);
+	//	sprintf(str,"input_to_pass2_%d",iSubstep);
+	//	pX_host->AsciiOutput(str);
 
 		// Establish Ohmic relationship:
 		pXusable->evaltime = pXhalf->evaltime;
@@ -2197,17 +2136,56 @@ void PerformCUDA_Advance_2 (
 			IzPerEzTuning += p_summands_host[ii];
 		};
 
+
+
+
+
+
+		// Iz_prescribed : it is the t_k+1 situation we are aiming for I_k+1, correct?
+		// So it should be got for time k+1?
+
+
+
+
+
+
+
+
+
+
 		// Set pXhalf->EzTuning:
 		pXhalf->EzTuning = pX1->EzTuning + (Iz_prescribed-Iz0)/IzPerEzTuning;
 		
 		printf("pX1->EzTuning %1.9E Iz_prescribed %1.9E \n"
 			"Iz0 %1.9E IzPerEzTuning %1.9E \n"
-			"pXhalf->EzTuning %1.9E \nPRESS T\n\n",
-			pX1->EzTuning,Iz_prescribed, Iz0, IzPerEzTuning,
+			"pXhalf->EzTuning %1.9E \n\n",
+			pX1->EzTuning,Iz_prescribed, 
+			Iz0, IzPerEzTuning,
 			pXhalf->EzTuning);
+		fprintf(fileEz,"EzTuning_k %1.14E evaltime_k %1.14E Iz_presc %1.14E evaltime_1/2 %1.14E "
+			"Iz0 %1.14E  IzPerEzTuning %1.14E pXhalf->EzTuning %1.14E ",
+			pX1->EzTuning,pX1->evaltime,Iz_prescribed, pXhalf->evaltime,
+			Iz0, IzPerEzTuning,pXhalf->EzTuning);
+
+
 		
-		char o = '0';
-		while ((o != 't') && (o != 'T')) o = getch();
+		
+		
+		
+		
+		
+		// ********************************
+		// DEBUG:
+		pXhalf->EzTuning = pX1->EzTuning;
+		// ********************************
+		
+
+
+
+
+
+
+
 
 		// Call with same parameters over again:
 		Kernel_Midpoint_v_and_Adot<<<numTilesMinor,threadsPerTileMinor>>>
@@ -2256,10 +2234,14 @@ void PerformCUDA_Advance_2 (
 		{
 			Iz0 += p_Iz0_summands_host[ii];
 		};
-		printf("Iz attained %1.8E Presc %1.8E Diff %1.4E\n",
+		printf("Iz attained %1.14E Presc %1.14E Diff %1.6E\n",
 			Iz0,Iz_prescribed,Iz0-Iz_prescribed);
 		// Can double-check here that Iz is being achieved:
+		fprintf(fileEz,"Iz attained %1.14E Presc %1.14E Diff %1.14E\n",
+			Iz0,Iz_prescribed,Iz0-Iz_prescribed);
 		
+
+
 		Kernel_Heating_routine<<<numTilesMajor,threadsPerTileMajor>>>(
 			hstep,
 			pXhalf->p_info,
@@ -2303,13 +2285,11 @@ void PerformCUDA_Advance_2 (
 										pXusable->p_nT_elec_minor);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXusable");
 
-		
-		SendToHost(pXusable,pXhalf,pX_host);
-		sprintf(str,"output_pass3_%d",iSubstep);
-		pX_host->AsciiOutput(str);
-
-
 		// ==================
+
+		//SendToHost(pXusable,pXhalf,pX_host);
+		//sprintf(str,"Stepped__%d",iSubstep);
+		//pX_host->AsciiOutput(str);
 
 		// We now created pXusable -> n,v,T and Adot. pXhalf->EzTuning.
 		
@@ -2335,14 +2315,13 @@ void PerformCUDA_Advance_2 (
 			pXusable->p_v_overall + BEGINNING_OF_CENTRAL // make it for everything		
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Create_v_overall pXusable");
+				
+
 		::Kernel_Average_v_overall_to_tris<<<numTriTiles,threadsPerTileMinor>>>(
 			pXusable->p_tri_corner_index,
 			pXusable->p_tri_perinfo,	
 			pXusable->p_v_overall + BEGINNING_OF_CENTRAL, // major v_overall
-			pXusable->p_tri_centroid, 
-
-			// HAS THIS BEEN POPULATED ??
-
+			pXhalf->p_tri_centroid, 
 			pXusable->p_v_overall
 			); // so motion will take place relative to this velocity.
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Create_v_overall pXusable");
@@ -2451,9 +2430,11 @@ void PerformCUDA_Advance_2 (
 			pXusable->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
 			pXusable->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
 			pXusable->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
-			pXusable->p_nT_neut_minor,
+
+			pXusable->p_nT_neut_minor, 
 			pXusable->p_nT_ion_minor,    
 			pXusable->p_nT_elec_minor,
+			
 			pXusable->p_v_neut,  // should always be minor...
 			pXusable->p_v_ion,
 			pXusable->p_v_elec,
@@ -2470,6 +2451,24 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect nT pX2");
 				
+		
+		::Kernel_Average_nT_to_tri_minors<<<numTriTiles,threadsPerTileMinor>>>(
+										pXhalf->p_tri_corner_index,
+										pXhalf->p_tri_perinfo, 
+										pX2->p_nT_neut_minor + BEGINNING_OF_CENTRAL,
+										pX2->p_nT_ion_minor + BEGINNING_OF_CENTRAL,
+										pX2->p_nT_elec_minor + BEGINNING_OF_CENTRAL,
+										pX2->p_nT_neut_minor,
+										pX2->p_nT_ion_minor,
+										pX2->p_nT_elec_minor);
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize avg nT pXhalf");
+
+
+		//SendToHost(pX2,pX2,pX_host);
+		//sprintf(str,"done_nT__%d",iSubstep);
+		//pX_host->AsciiOutput(str);
+
+
 		::Kernel_Rel_advect_v_tris<<<numTriTiles,threadsPerTileMinor>>>(
 			hstep*0.5,
 			pXhalf->p_info,
@@ -2505,6 +2504,7 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut pX2");
 		
+
 		::Kernel_Rel_advect_v_tris<<<numTriTiles,threadsPerTileMinor>>>(
 			hstep*0.5,
 			pXhalf->p_info,
@@ -2540,7 +2540,7 @@ void PerformCUDA_Advance_2 (
 			pX2->p_area,
 			pX2->p_v_ion + BEGINNING_OF_CENTRAL // ? Check USAGE
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent ion");
 		
 
 		::Kernel_Rel_advect_v_tris<<<numTriTiles,threadsPerTileMinor>>>(
@@ -2561,7 +2561,7 @@ void PerformCUDA_Advance_2 (
 			pX2->p_area_minor,
 			pX2->p_v_elec
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v tri ion");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v tri elec");
 		
 		::Kernel_Rel_advect_v_central<<<numTilesMajor,threadsPerTileMajor>>>(
 			hstep*0.5,
@@ -2578,7 +2578,7 @@ void PerformCUDA_Advance_2 (
 			pX2->p_area,
 			pX2->p_v_elec + BEGINNING_OF_CENTRAL // ?
 			);
-		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent neut");
+		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Reladvect v cent elec");
 		
 		// =========================================================================
 				
@@ -2621,14 +2621,18 @@ void PerformCUDA_Advance_2 (
 			);
 		Call(cudaThreadSynchronize(),"cudaThreadSynchronize Kernel_Advance_Antiadvect_phidot II");
 			
-		SendToHost(pX2,pX2,pX_host);
-		sprintf(str,"output_pX2_%d",iSubstep);
-		pX_host->AsciiOutput(str);
-
 		pX2->evaltime = pXusable->evaltime + hstep*0.5;
+				
+		//SendToHost(pX2,pX2,pX_host);
+		//sprintf(str,"pX2__%d",iSubstep);
+		//pX_host->AsciiOutput(str);
 		
-		printf("done a step.\n====================================================\n");
-		getch();
+		printf("Done substep %d.\n",iSubstep);
+		
+		pX2->EzTuning = pXhalf->EzTuning; // FOR NOW just setting it to any sensible value.
+		tempptr = pX1;
+		pX1 = pX2;
+		pX2 = tempptr;
 		
 		// Document sequence with inputs labelled fully and showing where calc'd.
 		// Then check that the calcs are as claimed in each routine.
@@ -2638,7 +2642,8 @@ void PerformCUDA_Advance_2 (
 	
 	// We intermittently return to CPU to do re-Delaunerization - to begin with.
 	// Otherwise only send data back, every 2.5e-11 s, for graphing. -> 20fps gives 2s/ns. 50s/25ns
-	
+	fclose(fileEz);
+
 	cudaEventRecord(stop,0);
 	cudaEventSynchronize(stop);
 
@@ -2703,6 +2708,7 @@ void PerformCUDA_Advance_2 (
 	printf("uFree %d uTotal %d\n",uFree,uTotal);
 	
 	printf("END OF CUDA");
+	while(1) getch();
 
 	//" do not call cudaResetDevice(): save invoked stuff for next step."
 

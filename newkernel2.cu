@@ -928,7 +928,7 @@ __global__ void Kernel_Average_v_overall_to_tris (
 		};
 		
 		v_out = THIRD*(v0+v1+v2);
-		
+
 		// For insulator triangle, 
 		// we should take v_overall_r = 0
 		// because this tri centroid will remain on the insulator.
@@ -939,8 +939,12 @@ __global__ void Kernel_Average_v_overall_to_tris (
 			//f64_vec2 rhat = r/r.modulus();
 			// v_out = v_out - rhat*v_out.dot(rhat);
 			v_out = v_out - r*v_out.dot(r)/(r.x*r.x+r.y*r.y);
-
 			// Well this is kinda wrong.
+
+
+			// UNDEFINED 2ND TIME
+
+
 		}
 	} else {
 		v_out.x = 0.0; v_out.y = 0.0;
@@ -1212,6 +1216,9 @@ __global__ void Kernel_RelAdvect_nT(
 			nvT1 = p_T_shared[indextri-StartMinor]*nv1; 
 			pos1 = p_tri_centroid[indextri-StartMinor];
 
+				if (index == 85400-BEGINNING_OF_CENTRAL) {
+					printf("%d nv1.x %1.5E \n",indextri,nv1.x);
+				};
 		} else {
 			nT nT1 = p_minor_nT_neut[indextri];
 			v_3 = p_minor_v_neut[indextri];
@@ -1231,7 +1238,16 @@ __global__ void Kernel_RelAdvect_nT(
 			// other threads are NOT needing a bus journey. Consider that.
 
 			// Stick with separate nT,v for now. We may never know, how much faster nvT would have been.
+				
+				if (index == 85400-BEGINNING_OF_CENTRAL) {
+					printf("v_3 %1.6E %1.6E %d v_overall %1.6E %1.6E nT1.n %1.6E\n",
+						v_3.x,v_3.y,indextri,v_overall.x,v_overall.y,nT1.n);
+				};
+				
 		};
+
+
+		
 		//char PBC = PBCtri[MAXNEIGH_d*threadIdx.x + iNeigh1];
 		if (info.has_periodic) {
 
@@ -1314,6 +1330,8 @@ __global__ void Kernel_RelAdvect_nT(
 			if (1) { // if legitimate edge
 				f64 flow = 0.5*h*((nv1+nv2).dot(edgenormal));
 				mass -= flow; // correct? -- compare
+				
+
 				flow = 0.5*h*((nvT1+nvT2).dot(edgenormal));
 				heat -= flow;
 			};
@@ -1326,6 +1344,11 @@ __global__ void Kernel_RelAdvect_nT(
 		// If we did the above with triangle threads that update a solution in shared memory,
 		// we could switch to half the block doing the following:
 		
+		if (index == 85400-BEGINNING_OF_CENTRAL) {
+			printf("mass %1.10E src %1.10E area_new %1.10E\n",
+				mass, nTsrc.n*area_old, area_new);
+		};
+
 		mass += nTsrc.n*area_old;
 		heat += nTsrc.n*nTsrc.T*area_old;
 		nT nT_out;
@@ -6077,7 +6100,7 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 
 				vec_e = ((nT_elec_src.n-n_ionrec.n_recombine)*v_e_k + n_ionrec.n_ionise*v_n_k)/n_e_plus;
 				
-				if ((OUTPUT) && (index == REPORT)) printf("v_e_k %1.8E %1.8E %1.8E\n",v_e_k.x,v_e_k.y,v_e_k.z);
+				if ((OUTPUT) && (index == REPORT)) printf("v_e_k %1.14E %1.14E %1.14E\n",v_e_k.x,v_e_k.y,v_e_k.z);
 				
 				vec_e += h*0.5*omega_ce.cross(v_e_k)
 					- h*eoverm*(// -grad_phi // below
@@ -6109,26 +6132,28 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 							+ (omega_ce.y*omega_ce.z + nu_eHeart*omega_ce.x)*GradTe.y);
 							
 				if ((OUTPUT) && (index == REPORT)) {
-					printf("vec_e total %1.6E %1.6E %1.8E\n",vec_e.x,vec_e.y,vec_e.z);
-					printf("h*eoverm*grad_phi %1.6E %1.6E \n",h*eoverm*grad_phi.x,h*eoverm*grad_phi.y);
-					printf("h*(MomAdditionRate/(n_e_plus*area)) %1.6E %1.6E \n",
+					printf("vec_e total %1.14E %1.14E %1.14E\n",vec_e.x,vec_e.y,vec_e.z);
+					printf("h*eoverm*grad_phi %1.14E %1.14E \n",h*eoverm*grad_phi.x,h*eoverm*grad_phi.y);
+					printf("h*(MomAdditionRate/(n_e_plus*area)) %1.14E %1.14E \n",
 						h*(MomAdditionRate.x/(n_e_plus*area)),
 						h*(MomAdditionRate.y/(n_e_plus*area)));
-					printf("h*0.5*omega_ce.cross(v_e_k).z %1.10E \n",
+					printf("h*0.5*omega_ce.cross(v_e_k).z %1.14E \n",
 						h*0.5*(omega_ce.cross(v_e_k)).z);
-					printf("h*eoverm*dAdt_k/c %1.6E \n h*eoverm*h*c*0.5*Lap_A_half %1.6E\n"
-						" h*eoverm*h*M_PI*e*() %1.6E\n"
-						"0.5*h*...*(v_e_k-v_n_k-v_n_0) %1.6E\n"
-						"0.5*h*nu_eiBar*(v_e_k-v_ion_k) %1.6E\n",
-						h*eoverm*dAdt_k.z/c ,h*eoverm*h*c*0.5*Lap_A_half.z,
-						h*eoverm*h*M_PI*e*(nT_ion_src.n*v_ion_k.z - nT_elec_src.n*v_e_k.z),// comes out -1.033e6.
+					printf("h*eoverm*dAdt_k/c %1.14E \n" 
+						"h*eoverm*h*c*0.5*Lap_A_half %1.14E\n"
+						" h*eoverm*h*M_PI*e*() %1.14E\n"
+						"0.5*h*...*(v_e_k-v_n_k-v_n_0) %1.14E\n"
+						"0.5*h*nu_eiBar*(v_e_k-v_ion_k) %1.14E\n",
+						h*eoverm*dAdt_k.z/c ,
+						h*eoverm*h*c*0.5*Lap_A_half.z,
+						h*eoverm*h*M_PI*e*(nT_ion_src.n*v_ion_k.z - nT_elec_src.n*v_e_k.z),
 						// = 8e-18*2e17*(viz-vez) = 1.6 (viz-vez) = 1.6(-vez) = 1e6.
 						// Where is the term that cancels its impact?
 						0.5*h*(m_n/(m_e+m_n))*nu_ne_MT_over_n*nT_neut_use.n*(v_e_k-v_n_k-v_n_0).z,
 						0.5*h*nu_eiBar*(v_e_k-v_ion_k).z);
-					printf("-h*eoverm*EzShape*EzTuning %1.8E\n",
+					printf("-h*eoverm*EzShape*EzTuning %1.14E\n",
 						-h*eoverm*EzShape*EzTuning);
-					printf("thermal contrib z %1.8E\n",
+					printf("thermal contrib z %1.14E\n",
 						fac*(
 							  (omega_ce.x*omega_ce.z - nu_eHeart*omega_ce.y)*GradTe.x
 							+ (omega_ce.y*omega_ce.z + nu_eHeart*omega_ce.x)*GradTe.y));
@@ -6151,13 +6176,13 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			
 				if ((OUTPUT) && (index == REPORT))
 				{
-					printf("contrib_[e-i] %1.8E\n",
+					printf("contrib_[e-i] %1.14E\n",
 							fac*(
 						  (omega_ce.z*omega_ce.x - nu_eHeart*omega_ce.y)*(v_e_k.x-v_ion_k.x)
 							+ (omega_ce.z*omega_ce.y + nu_eHeart*omega_ce.x)*(v_e_k.y-v_ion_k.y)
 							+ (omega_ce.z*omega_ce.z + nu_eHeart*nu_eHeart)*(v_e_k.z-v_ion_k.z)));
 				
-					printf("vec_e %1.8E %1.8E %1.8E \n",
+					printf("vec_e %1.14E %1.14E %1.14E \n",
 						vec_e.x,vec_e.y,vec_e.z);
 				};
 			}
@@ -6254,7 +6279,7 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			vec_e -= Tens1*vec_i;
 		
 			if ((OUTPUT) && (index == REPORT))
-				printf("modified vec_e \n %1.8E %1.8E %1.8E \n",
+				printf("modified vec_e \n %1.14E %1.14E %1.14E\n",
 					vec_e.x,vec_e.y,vec_e.z);
 		
 			// Let's watch out:
@@ -6319,8 +6344,8 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 					 + fac*(omega_ce.y*omega_ce.z + nu_eHeart*omega_ce.x);
 			
 			if ((OUTPUT) && (index == REPORT))
-				printf(	"nu_eiBar %1.5E n_e_plus %1.5E nu_en_MT %1.5E\n"
-						"V \n %1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n\n",
+				printf(	"nu_eiBar %1.14E n_e_plus %1.14E nu_en_MT %1.14E\n"
+						"V \n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n\n",
 						nu_eiBar,n_e_plus,nu_ne_MT_over_n*nT_neut_use.n,
 						Tens1.xx,Tens1.xy,Tens1.xz,
 						Tens1.yx,Tens1.yy,Tens1.yz,
@@ -6329,7 +6354,7 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			Tens1 -= Tens2; // Tens1 = V - F G^-1 U
 		
 			if ((OUTPUT) && (index == REPORT))
-				printf("V-FG^-1U \n %1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n%1.6E %1.6E %1.6E \n\n",
+				printf("V-FG^-1U \n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n%1.14E %1.14E %1.14E \n\n",
 					Tens1.xx,Tens1.xy,Tens1.xz,
 					Tens1.yx,Tens1.yy,Tens1.yz,
 					Tens1.zx,Tens1.zy,Tens1.zz);
@@ -6348,17 +6373,17 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 		
 			if ((OUTPUT) && (index == REPORT)) {
-				printf("(V-FG^-1U)^-1 \n %1.6E %1.6E %1.6E ) %1.6E = %1.6E\n%1.6E %1.6E %1.6E ) %1.6E = %1.6E \n%1.6E %1.6E %1.6E ) %1.6E = %1.6E \n\n",
+				printf("(V-FG^-1U)^-1 \n %1.14E %1.14E %1.14E ) %1.14E = %1.14E\n%1.14E %1.14E %1.14E ) %1.14E = %1.14E \n%1.14E %1.14E %1.14E ) %1.14E = %1.14E \n\n",
 					Tens2.xx,Tens2.xy,Tens2.xz,vec_e.x,v_e_plus.x,
 					Tens2.yx,Tens2.yy,Tens2.yz,vec_e.y,v_e_plus.y,
 					Tens2.zx,Tens2.zy,Tens2.zz,vec_e.z,v_e_plus.z);
 				printf("\n");
 				// Test relationship:
-				printf("(1-hh) %1.10E (1+..)/(1+..) %1.10E\n",
-					(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n),
+				printf("h %1.14E (1-hh) %1.14E (1+..)/(1+..) %1.14E\n",
+					h, (1.0-h*h*e*eoverm*M_PI*nT_elec_src.n),
 					
 					(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus));
-				printf("vek.z %1.8E rat*vekz %1.8E vez_k+1 %1.8E \nek ne+ %1.10E %1.10E\n************\n",
+				printf("vek.z %1.14E rat*vekz %1.14E vez_k+1 %1.14E \nek ne+ %1.14E %1.14E\n************\n",
 					v_e_k.z,
 				v_e_k.z*(1.0-h*h*e*eoverm*M_PI*nT_elec_src.n)/(1.0+h*h*e*eoverm*M_PI*n_e_plus),
 				v_e_plus.z,
@@ -6370,18 +6395,9 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 			// Now we come to part of the routine where we have to record the effects of scaling the external Ez field.
 			// We want to record an aggregated total: Sum of z current = Iz0 + sigma_zz EzTuning.
 			{
-				{ 
-					Vector3 ve_plus_of_EzTuning = Tens2*vec_e_effect_of_EzTuning;
-					real viz_plus_of_EzTuning;
-					{
-						Vector3 temp = Tens3*ve_plus_of_EzTuning;
-						viz_plus_of_EzTuning = Tens2.zz*h*qoverM*EzShape
-										 - Tens2.zx*temp.x
-										 - Tens2.zy*temp.y
-										 - Tens2.zz*temp.z;// Where are we getting area?
-					}
-					sigma_zz[threadIdx.x] = q*area*(viz_plus_of_EzTuning*n_ion_plus - ve_plus_of_EzTuning.z*n_e_plus);
-				}
+				Vector3 ve_plus_of_EzTuning = Tens2*vec_e_effect_of_EzTuning;
+				// Sadly there appears not to be a way round storing this.
+
 				// Performance: Some changes resulted in lower stack frame, higher loads+stores. 
 				//              We should realise that way outside L1, this is a worsening. NVM.
 
@@ -6424,21 +6440,46 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 				v_ion_plus = Tens2*(vec_i - Tens3*v_e_plus);  // Here is v_i_k+1
 				
 				Iz[threadIdx.x] = q*area*(v_ion_plus.z*n_ion_plus - v_e_plus.z*n_e_plus);
-				
+				{ 
+					real viz_plus_of_EzTuning;
+					{
+						Vector3 temp = Tens3*ve_plus_of_EzTuning;
+						viz_plus_of_EzTuning = Tens2.zz*h*qoverM*EzShape
+										 - Tens2.zx*temp.x
+										 - Tens2.zy*temp.y
+										 - Tens2.zz*temp.z;
+					}
+					sigma_zz[threadIdx.x] = q*area*(viz_plus_of_EzTuning*n_ion_plus - ve_plus_of_EzTuning.z*n_e_plus);
+
+					if ((OUTPUT) && (index == REPORT)) {
+						printf("sigma_zz[threadIdx.x]: %1.14E \n"
+							"viz_plus_of_EzTuning*n_ion_plus %1.14E\n"
+							"ve_plus_of_EzTuning.z*n_e_plus %1.14E\n"
+							"vec_e_effec %1.14E %1.14E %1.14E\n",
+							sigma_zz[threadIdx.x],
+							viz_plus_of_EzTuning*n_ion_plus,
+							ve_plus_of_EzTuning.z*n_e_plus,
+							vec_e_effect_of_EzTuning);
+					};
+
+					//Bug: sigma_zz calc appeared in wrong place, above, and gave wrong ion values.
+
+				}
 				if ((OUTPUT) && (index == REPORT)) {
-					printf("Iz : %1.8E ion %1.8E elec %1.8E \n"
-						   "old: %1.8E ion %1.8E elec %1.8E \n------\n",
+					printf("Iz: %1.14E ion %1.14E e %1.14E\n"
+						   "old: %1.14E ion %1.14E e %1.14E\n------\n",
 						   Iz[threadIdx.x], q*area*v_ion_plus.z*n_ion_plus,-q*area*v_e_plus.z*n_e_plus,
 						   q*area*(v_ion_k.z*nT_ion_src.n-v_e_k.z*nT_elec_src.n),
 									q*area*v_ion_k.z*nT_ion_src.n,-q*area*v_e_k.z*nT_elec_src.n);
 				}
-
-				if //((OUTPUT) && (index == REPORT)) {
+				
+				if ((OUTPUT) && (index == REPORT)) 
 					//(Iz[threadIdx.x] > 1.0e6) || 
-					( (Iz[threadIdx.x] != Iz[threadIdx.x])) 
+				 //  ( (Iz[threadIdx.x] != Iz[threadIdx.x])
+				//		&& (threadIdx.x == 32))
 				{ // && (index < BEGINNING_OF_CENTRAL)){
-					printf("!__ %d %d | Iz %1.8E sig %1.8E ne %1.8E vez %1.8E r %1.8E\n",
-							index,per_info.flag,
+					printf("!__ %d %d | Iz %1.14E sig %1.14E ne %1.14E vez %1.14E r %1.14E\n",
+							index, per_info.flag,
 							//q*area*(v_ion_plus.z*n_ion_plus - v_e_0.z*n_e_plus),
 							Iz[threadIdx.x],
 							sigma_zz[threadIdx.x],
@@ -6498,7 +6539,6 @@ h*0.5*moverM*nu_ieBar*(v_ion_k.x-v_e_k.x));
 		// Time to sort out heating contribution: (ie frictional or "resistive" heating)
 
 		f64 NnTn_addition, NiTi_addition, NeTe_addition;
-
 		// Inelastic friction heating:
 		NiTi_addition = area* THIRD*m_ion*n_ionrec.n_ionise*((v_ion_k-v_n_k).dot(v_ion_k-v_n_k));
 		NnTn_addition = area* THIRD*m_ion*n_ionrec.n_recombine*((v_ion_k-v_n_k).dot(v_ion_k-v_n_k));

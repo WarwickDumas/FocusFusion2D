@@ -1468,7 +1468,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					&Systdata_host, 
 					pXnew->numVertices,
 					1e-13, 
-					10,
+					1000,
 					&Systdata_host
 				);
 				evaltime += 1.0e-13;
