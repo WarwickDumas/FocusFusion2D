@@ -91,7 +91,8 @@ public:
 	bool boolDisplayKeyButton, boolDisplayInnerMesh, boolDisplayMainMesh, 
 		boolDisplayMeshWireframe, boolDisplayScales,
 		boolClearZBufferBeforeWireframe,
-		bDisplayTimestamp;
+		bDisplayTimestamp,
+		boolDisplayShadow;
 	real TickRescaling;
 
 #define FLAG_MESH      0
@@ -126,12 +127,13 @@ public:
 	
 	//Call both of these:
 	HRESULT InitialiseWithoutBuffers(int vpleft, int vpright, int vpwidth, int vpheight,
-											    D3DXVECTOR3 in_Eye, D3DXVECTOR3 Lookat);
+											    D3DXVECTOR3 in_Eye, D3DXVECTOR3 Lookat,
+		bool bOrtho = false);
 
 	// This one may need things re-dimensioning after
 	HRESULT InitialiseBuffers(const TriMesh & X);
 	
-	HRESULT surfacegraph::InitialiseBuffersAux(TriMesh & X, int iLevel, int NTris=0);
+	HRESULT InitialiseBuffersAux(TriMesh & X, int iLevel, int NTris=0);
 
 	//HRESULT SetDataWithSegue(System & X);
 	HRESULT SetDataWithColour(const TriMesh &, int ,int,
@@ -140,24 +142,24 @@ public:
 		
 		int code = 0);
 
-	HRESULT surfacegraph::SetDataWithColourAux(TriMesh & X, int iLevel, int colourflag, int heightflag, int offset_data, int offset_vcolour,
+	HRESULT SetDataWithColourAux(TriMesh & X, int iLevel, int colourflag, int heightflag, int offset_data, int offset_vcolour,
 		int NTris = 0 // introduced for debugging
 		);
 
-	VOID Render(char * szTitle, bool RenderTriLabels,
+	VOID Render(const char * szTitle, bool RenderTriLabels,
 		const TriMesh * pX,
 				char * szLinebelow = 0);
 	VOID Rendertemp(void);
 
-	VOID surfacegraph::RenderAux(const char * szTitle, int const iLabels, const TriMesh * pX, int iLevel);
+	VOID RenderAux(const char * szTitle, int const iLabels, const TriMesh * pX, int iLevel);
 
-	HRESULT surfacegraph::SetEyePlan(const D3DXVECTOR3 & newEye);
-	HRESULT surfacegraph::SetEye_NotPlan(const D3DXVECTOR3 & newEye);
-	HRESULT surfacegraph::SetLookat_NotPlan(const D3DXVECTOR3 & newLookat);
-	HRESULT surfacegraph::SetEyeAndLookat(const D3DXVECTOR3 & newEye,
+	HRESULT SetEyePlan(const D3DXVECTOR3 & newEye);
+	HRESULT SetEye_NotPlan(const D3DXVECTOR3 & newEye);
+	HRESULT SetLookat_NotPlan(const D3DXVECTOR3 & newLookat);
+	HRESULT SetEyeAndLookat(const D3DXVECTOR3 & newEye,
 																		const D3DXVECTOR3 & newLookat);
 	
-	void surfacegraph::DrawSurface(char szname[],
+	void DrawSurface(const char szname[],
 				   const int heightflag,
 				   const real * var_ptr_0,
 				   const int colourflag,
@@ -170,9 +172,10 @@ public:
 
 	// helper function:
 	
-	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false);
-	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline);
-	void inline RenderText (char * text,int lines_down);
+	void inline RenderLabel (char * text, float x, float y, float z, bool extrainfo = false, bool botleft = false, bool bColoured = false);
+	void inline RenderLabel2 (char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000, bool bLong = false);
+	void inline RenderText (const char * text,int lines_down);
+	void inline RenderLabel3(char * text, float x, float y, float z, int whichline, unsigned int color = 0xff000000);
 
 	~surfacegraph();
 };

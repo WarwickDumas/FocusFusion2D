@@ -12,44 +12,135 @@
 #include "constant.h"
 #include "resource.h"
 #include <math.h>
-
+  
 bool const bScrewPinch = false;
 
+#define DIRICHLET false
+#define RADIALDECLINE true
+#define EULERIAN
+// change to #define LAGRANGIAN
 
-#define FOLDER "E:/outputs/"
-#define INITIALAVI "start.avi"		
+//#define FLATAZBC
 
-#define FUNCTIONALFILE_START FOLDER "functionals"
-#define DATAFILENAME FOLDER "Data_"
-#define AUTOSAVE_FILENAME FOLDER "autosave.dat"
-#define RUNTIME_FILENAME FOLDER "runtime.dat"
+int const NUMAVI = 9;
+#define FOLDER L"C:/outputs/"
+#define FOLDER2 "C:/outputs/"
+#define INITIALAVI "0.avi"		
+#define INITIALMP4 L"0.mp4"
+#define STORYFILE "temp.txt"
+#define STORYFILE2 "temp2.txt"
 
-#define DELAY_MILLISECS      120 // pause
+#ifdef OSCILLATE_IZ
+#define FUNCTIONALFILE_START FOLDER2 "ofunctionals"
+#define DATAFILENAME FOLDER2 "oData_"
+#define AUTOSAVE_FILENAME FOLDER2 "oautosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "oruntime.dat"
+#define AUTOSAVENAME "oauto"
+#define VERTAUTOSAVENAME "ograph"
+#else
+#define FUNCTIONALFILE_START FOLDER2 "bfunctionals"
+#define DATAFILENAME FOLDER2 "Data_"
+#define AUTOSAVE_FILENAME FOLDER2 "bautosave.dat"
+#define RUNTIME_FILENAME FOLDER2 "bruntime.dat"
+#define AUTOSAVENAME "cauto"
+#define VERTAUTOSAVENAME "graph"
+ 
+#endif
+
+// the struggle is going to be, to store graphing data
+
+#define DELAY_MILLISECS      100 // pause
 
 // steps per frame
-#define GRAPHICS_FREQUENCY				1
+#define GRAPHICS_FREQUENCY				1 // 2e-11
+#define REDELAUN_FREQUENCY				10 
+
+#define STEPS_PER_LOOP               1    // soon change to 500
 // frames between file pinch-offs:
-#define AVI_FILE_PINCHOFF_FREQUENCY     60
+#define AVI_FILE_PINCHOFF_FREQUENCY     250 // 50 = 1 ns
+
+// 1 frame = 0.01 so 100 frames == 1 ns
+
 // milliseconds between frames:
-#define AVIFRAMEPERIOD         100      // Try 0.4s per ns. 100ns = 40s
+#define AVIFRAMEPERIOD         15  // milliseconds; 20 ms => 50 fps.
 
-#define DATA_SAVE_FREQUENCY					   10
+#define VERTDATA_SAVE_FREQUENCY              5
+#define DATA_SAVE_FREQUENCY					 1
+// For debug. For production change it to 25
 
+// Program Mechanics:
+// ==================
+
+#define MAXNEIGH 12 // please keep < 12? It will help.
+
+// 12*32768*5 = 2MB .. just to keep things in perspective.
+// We should keep the number down just to reduce fetch size.
+// Let's keep it real. nvT is best for our fetches and therefore is best.
+#define SWITCH_TO_CENTRE_OF_INTERSECTION_WITH_INSULATOR_FOR_TRI_CENTROID_CPU 0
+
+// Note: NUMVERTICES must be divisble by 12
+
+long const numTriTiles = 384; // 336   note that there are also centrals
+long const numTilesMajor = 384;  // 336
+long const numTilesMinor = 576; // 504 = 336 +  // 576 = 384 + 192
+								// 456*256 = 304*256 + 304*128
+// Set NUMVERTICES_WITHIN below
+								// numTriTiles == numTilesMajor because the two sets are bijective.
+								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
+
+long const threadsPerTileMinor = 256; // PopOhmsLaw ASSUMES THIS IS A POWER OF 2 !!!
+long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
+
+long const threadsPerTileMajorClever = 256;
+long const numTilesMajorClever = 192;
+
+long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
+long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
+long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
+ 
+long const NUMVERTICES = numTilesMajor*threadsPerTileMajor;//36864; //36000; // particularly applies for polar?
+											 // = 288*128
+long const NMINOR = threadsPerTileMinor * numTilesMinor;
+long const NUMTRIANGLES = NMINOR - NUMVERTICES;
+
+// incorrect flows will lead to compensations afterwards
+
+#define REL_THRESHOLD_HEAT   4.0e-8
+#define REL_THRESHOLD_VISC   1.0e-7
+double const RELTHRESH_AZ =  1.0e-9; 
+
+// Note that getting it wrong should mean that subsequently we will correct for the error.
+ 
 
 // Model parameters:
 //===============================
 
  // radii in cm from anode centre : 
-#define DOMAIN_OUTER_RADIUS   4.64
+#define DOMAIN_OUTER_RADIUS  10.0   // Assume cold neutrals looking out from this point.
+#define START_SPREADING_OUT_RADIUS 4.24
+#define NUMVERTICES_WITHIN 43008 // 55296 // using NUMVERTICES - 6144 = 61440-6144
+ // 36864  // Used for initialization - focus on the area of interest
+// === 288*128, vs 336*128 for whole lot.
+#define VISCOSITY_MAX_RADIUS  4.3
+#define MESHMOVE_MAX_RADIUS   6.0
+
+// Think it's time we made radial values going out to 10cm.
+#define CHAMBER_OUTER_RADIUS  10.0
+
+#define GRAPH1D_MAXR  4.6
+
+#define KILL_NEUTRAL_V_OUTSIDE_TEMP  8.0 // No idea why problem occurring - just killing it for now
 
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
-real const CATHODE_ROD_R = 5.0;
-real const CATHODE_ROD_RADIUS = 0.47625;
+#define CATHODE_ROD_R_POSITION   5.0
+#define CATHODE_ROD_RADIUS       0.47625
 // Let's say some vertcells will be within it and we acknowledge that asap.
 
 real const DEVICE_RADIUS_INITIAL_FILAMENT_CENTRE = 3.61;   
 #define  DEVICE_RADIUS_INSULATOR_OUTER  3.44
 #define  REVERSE_ZCURRENT_RADIUS   2.8
+
+#define  INSULATOR_HEIGHT          2.8
 							// around the edge of the anode
 #define OVER_RADIAL_DIST_ANODE_TO_BACK   0.5434782609
 									// 1.0/(4.64-2.8)
@@ -117,8 +208,6 @@ long const POINTS_PER_PLANE = 36864; // To have just under is OK
 // Initially do we want to plan for unused points? Not sure.
 // We can build that it - but we want the total dimensioned to be divisible by 128 etc.
 
-long const NUMBER_OF_VERTICES_AIMED = 36864; //36000; // particularly applies for polar?
-				// = 288*128
 
 
 // For info: horizontal planar area at 2.8cm inner, 5cm outer radius = 3.37cm^2 with 1.18cm^2 inside objects.
@@ -141,7 +230,8 @@ real const PLANE_Z = 1.0;
 
 
 //real const INSULATOR_RADIUS_SQ = DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER;
-real const PPN_CIRCLE = 1.0/16.0;  // the proportion of a circle for this simulation
+#define PPN_CIRCLE   (1.0/16.0) 
+// the proportion of a circle for this simulation
 
 //real const HALFANGLE = PI*PPN_CIRCLE; // half the base angle of the slice
 #define HALFANGLE 0.196349541
@@ -150,30 +240,42 @@ real const PPN_CIRCLE = 1.0/16.0;  // the proportion of a circle for this simula
 #define GRADIENT_X_PER_Y    0.198912367
 
 real const GRADIENT_Y_PER_X = 1.0/GRADIENT_X_PER_Y;
+real const CUTAWAYANGLE = -0.005;
+//-GRADIENT_X_PER_Y * 0.5;
+
+// putted -0.005   --- it fails at -0.001 and we don't know why
 
 // reality: cathode rod is 0.47625 cm radius, at 5cm device radius
+// IT DOES NOT LIKE 0!!
+// **Clearly need dimensioned index array to achieve some overlap.**
+// **Fix problem by going to look for numTrianglesTotal[ **
 
-real const n_INITIAL_SD = 0.04; // 400 micron
-real const INITIALnSD = n_INITIAL_SD; // 400 micron
-real const INITIALTSD = 0.035; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
-
-real const FILAMENT_OWN_PEAK_n = 9.9e17;
-real const UNIFORM_n = 1.0e12;  // ionisation fraction at room temp would be tiny;
+real const n_INITIAL_SD = 0.08; // 800 micron
+real const INITIALnSD = n_INITIAL_SD; 
+real const INITIALTSD = 0.08; // if n is Gaussian then T is a cone. So make n more spread out than T (?)
+ 
+real const FILAMENT_OWN_PEAK_n = 1.0e15;
+real const UNIFORM_n = 1.0e8;  // ionisation fraction at room temp would be tiny;
 							// this is here to help avoid density = zero which causes division issues
 real const FILAMENT_OWN_PEAK_T = 4.8e-12;
-real const UNIFORM_T= 4.0e-14; // 300K
+real const UNIFORM_T = 4.0e-14; // 300K
 
-real const BZ_CONSTANT = 2.7;  // Constant Bz before any plasma Bz:
+#define INITIAL_BACKGROUND_ION_DENSITY 1.0e8
+#define INITIAL_TOTAL_DENSITY 1.0e18
+
+#define BZ_CONSTANT     2.7  
+							   // Constant Bz before any plasma Bz:
 					   // 0.3 G from Earth and 2.4 G from coil
 real const RELATIVEINITIALJZUNIFORM = 0.0; 
 // note it is not wise to have uniform current w/o uniform ion density - can revisit this
 
-real const  ZCURRENTBASETIME = 18.0e-9;
+real const  ZCURRENTBASETIME = 0.0;      //18.0e-9; // start from 0 -- 16/10/17
 real const  PEAKCURRENT_AMP = 88000.0;   // 88000 Amp - 2 filaments
 // Note that the current is negative from this.
 real const  PEAKCURRENT_STATCOULOMB = PEAKCURRENT_AMP * sC_;
 real const  PEAKTIME  = 18.0e-7;
 real const  PIOVERPEAKTIME = PI/PEAKTIME;
+// should have mapped peak to pi/2
 
 real const SimArea = PI*(DOMAIN_OUTER_RADIUS*DOMAIN_OUTER_RADIUS-DEVICE_RADIUS_INSULATOR_OUTER*DEVICE_RADIUS_INSULATOR_OUTER)/16.0; // pi r^2 -- note to self pls do not keep adding a 2.
 real const FULLANGLE = 2.0*PI/16.0;
@@ -182,23 +284,27 @@ real const FULLANGLE = 2.0*PI/16.0;
 
 // Simulation parameters:
 //==================================
-
-real const h_INNER_INIT = 0.5e-14; // initial value
-real const h_RECALCULATE = 1.0e-12;
-long const INNERMOST_STEPS = 200;
+//
+//real const h_INNER_INIT = 0.5e-14; // initial value
+//real const h_RECALCULATE = 1.0e-12;
+//long const INNERMOST_STEPS = 200;
 //real const h_MOTION = 1.0e-12; // could make it longer. 1e-12+6 = 1e-6 cm = 0.01 micron.
 // Need to be careful in case of thermal pressure messing up mesh.
 // Let's assume we do recalculation of parameters as often as we do recalculation of pressure.
 
+real const TIMESTEP = 2.5e-12;// 7.8125e-14; 
+real const SUBSTEP = 1.0e-13; // 7.8125e-14;
+int const SUBCYCLES = 25; 
+int const GPU_STEPS = 10; // 2.5e-11
+int const ADVECT_FREQUENCY = 10; // 5e-12; 1e-11 = 1e-4/1e7 // 64
+int const ADVECT_STEPS_PER_GPU_VISIT = 1;
 
-real const TIMESTEP = 1.0e-11; 
-// not used
 
 //long const NUM_VERTICES_PER_CM_SQ = 10000; // 60000; //12000; // use 262144 = 2^18. 2^9 = 512
 //long const NUM_VERTICES_PER_CM_SQ_INSIDE_INS = 9000; // 24000; // 8000;
 // Make life easier: both same.
 
-int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
+//int const NUM_SUBSTEPS_IN_h_over_2 = 3; // Visc+Accel, Ionisation+Heating
 
 int const VERTICES_PER_ARRAY = 65536; // for graphics. Just sends warning at the moment.
 
@@ -233,7 +339,6 @@ real const maximum_spacing = 0.025;  // cm: do not make cell widths larger than 
 // Graphics related
 // ================
 
-
 float const NEAR_CLIPPING_PLANE = 0.1f;
 float const FAR_CLIPPING_PLANE = 200.0f;
 
@@ -241,12 +346,20 @@ extern float xzscale;
 
 #define NEGATE_JZ
 
-long const VIDEO_WIDTH = 1440;
-long const VIDEO_HEIGHT = 900;  // the client area size; used for 4 graphs(at present)
+//long const VIDEO_WIDTH = 1440;
+//long const VIDEO_HEIGHT = 900;  // the client area size; used for 4 graphs(at present)
+
+unsigned long const VIDEO_WIDTH = 1440;
+unsigned long const VIDEO_HEIGHT = 1050;  // the client area size; used for 4 graphs(at present)
+
+								 // CHANGE THIS TO MAX DIMS ---- *** ??? *** ???
+
 long const SCREEN_WIDTH = 1920;//1440;
 long const SCREEN_HEIGHT = 1080;//900; // affects how window and console are placed
-long const GRAPH_WIDTH = VIDEO_WIDTH/2; 
+
+long const GRAPH_WIDTH = VIDEO_WIDTH / 3;
 long const GRAPH_HEIGHT = VIDEO_HEIGHT/2;
+long const NUMGRAPHS = 6;
 
 float const GRAPHIC_MIN_Y = 0.0;
 float const GRAPHIC_MAX_Y = 4.5;

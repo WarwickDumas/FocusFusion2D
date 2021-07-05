@@ -2,13 +2,16 @@
 #define VECTOR_TENSOR_H
 
 #include "FFxtubes.h"
+#include <conio.h>
+#include <stdio.h>
 
 // will want to do #include type.h
 // for #define real, qd_or_d
 
 #define real double
+#define __CUDACC__
 
-int const MAX_TRIS_PER_VERTEX = 20;  
+int const MAX_TRIS_PER_VERTEX = 12;  
 #ifdef __CUDACC__
 
 #define QUALIFIERS __host__ __device__ __forceinline__ 
@@ -49,7 +52,7 @@ struct Vector2
 	// But that's no good for MSVS : the definition/declaration will get 
 	// parsed 0 or several times. Better declare just outside class instead.
  
-	Vector2 QUALIFIERS Vector2::operator-() {
+	Vector2 QUALIFIERS operator -() {
 		return Vector2(-x,-y); 
 	}
 	
@@ -82,28 +85,28 @@ struct Vector2
 		result.y = y/h;
 		return result;
 	}
-	void QUALIFIERS Vector2::operator += (const Vector2 &v) 
+	void QUALIFIERS operator += (const Vector2 &v) 
 	{
 		x += v.x;
 		y += v.y;
 	}
-	void QUALIFIERS Vector2::operator -= (const Vector2 &v)
+	void QUALIFIERS operator -= (const Vector2 &v)
 	{
 		x -= v.x;
 		y -= v.y;
 		// Don't think we should try to use return *this in NVCC. 
 	}
-	void QUALIFIERS Vector2::operator *= (const real alpha)
+	void QUALIFIERS operator *= (const real alpha)
 	{
 		x *= alpha;
 		y *= alpha;
 	}
-	void QUALIFIERS Vector2::operator /= (const real alpha)
+	void QUALIFIERS operator /= (const real alpha)
 	{
 		x /= alpha;
 		y /= alpha;
 	}
-	real QUALIFIERS modulus()
+	real QUALIFIERS modulus() const
 	{
 		return sqrt(x*x+y*y);
 	}
@@ -121,7 +124,7 @@ struct Vector2
 		result.x = x*factor; result.y = y*factor;
 	}
 
-	void QUALIFIERS Vector2::project_to_radius
+	void QUALIFIERS project_to_radius
 				(Vector2 & result, real radius)
 	{
 		real factor = radius/sqrt(x*x+y*y);
@@ -198,29 +201,29 @@ struct Vector3
 		x /= xx; y /= xx; z /= xx;
 	}
 
-	bool QUALIFIERS Vector3::operator != (const Vector3 &v) const 
+	bool QUALIFIERS operator != (const Vector3 &v) const 
 	{
 		return ((v.x != x) || (v.y != y) || (v.z != z));
 	}
 
-	real QUALIFIERS Vector3::dotxy(const Vector3 &v) const
+	real QUALIFIERS dotxy(const Vector3 &v) const
 	{
 		return x*v.x+y*v.y;
 	}
-	real QUALIFIERS Vector3::dotxy(const Vector2 &v) const
+	real QUALIFIERS dotxy(const Vector2 &v) const
 	{
 		return x*v.x+y*v.y;
 	}
-	real QUALIFIERS Vector3::dot(const Vector2 &v) const
+	real QUALIFIERS dot(const Vector2 &v) const
 	{
 		return x*v.x+y*v.y;
 	}
-	real QUALIFIERS Vector3::dot(const Vector3 &v) const
+	real QUALIFIERS dot(const Vector3 &v) const
 	{
 		return x*v.x+y*v.y+z*v.z;
 	}
 
-	Vector2 QUALIFIERS Vector3::xypart()
+	Vector2 QUALIFIERS xypart() const
 	{
 		Vector2 u;
 		u.x = x; 
@@ -298,7 +301,7 @@ struct Tensor2
 			);
 	}
 	
-	QUALIFIERS void Tensor2::Inverse(Tensor2 & result) const
+	QUALIFIERS void Inverse(Tensor2 & result) const
 	{
 		real overdet = 1.0/(xx*yy-xy*yx);
 		result.xx = yy*overdet;
@@ -346,7 +349,7 @@ struct Tensor3
 		zx = z_x; zy = z_y; zz = z_z;
 	}
 
-	QUALIFIERS void Tensor3::MakeCross (const Vector3 om)
+	QUALIFIERS void MakeCross (const Vector3 om)
 	{
 		xx = 0.0;
 		xy = -om.z;
@@ -359,7 +362,7 @@ struct Tensor3
 		zz = 0.0;
 	}
 	
-	QUALIFIERS Tensor3 Tensor3::Inverse()
+	QUALIFIERS Tensor3 Inverse()
 	{
 		Tensor3 result;
 		real det =	  xx*(yy*zz-yz*zy)
@@ -379,15 +382,27 @@ struct Tensor3
 		result.yz = yx*xz-xx*yz;
 		result.zz = xx*yy-yx*xy;
 
-		result = result / det;
+		if (det != 0.0) {
+			result = result / det;
+		} else {
+			printf("\n\nMATRIX INVERSE FAILED. Det==0\n\n\n");
+			memset(&result, 0, sizeof(Tensor3));
+			result.xx = 1.0; result.yy = 1.0; result.zz = 1.0;
+		}
 		return result; // inline so return object doesn't matter
 	};
 
-	QUALIFIERS void Tensor3::Inverse(Tensor3 & result)
+	QUALIFIERS void Inverse(Tensor3 & result)
 	{
-		real over =	1.0/(  xx*(yy*zz-yz*zy)
-					+ xy*(zx*yz-yx*zz)
-					+ xz*(yx*zy-yy*zx) );
+		real det = (xx*(yy*zz - yz*zy)
+			+ xy*(zx*yz - yx*zz)
+			+ xz*(yx*zy - yy*zx));
+
+		if (det == 0.0) {
+			printf("\n\nMATRIX INVERSE FAILED II. Det == 0\n\n\n");
+			return;
+		}
+		real over =	1.0/det;
 		
 		// Fill in matrix of minor determinants; 
 		// transposed with applied cofactors (signs)
@@ -405,7 +420,7 @@ struct Tensor3
 		//return result; // inline so return object doesn't matter
 	};
 
-QUALIFIERS Tensor2 Tensor3::xy2x2part () const
+QUALIFIERS Tensor2 xy2x2part () const
 	{
 		Tensor2 res;
 		res.xx = xx;
@@ -415,7 +430,7 @@ QUALIFIERS Tensor2 Tensor3::xy2x2part () const
 		return res;
 	}
 
-QUALIFIERS Tensor3 Tensor3::operator- () const
+QUALIFIERS Tensor3 operator- () const
 	{
 		Tensor3 res;
 		res.xx = -xx; res.xy = -xy; res.xz = -xz;
@@ -424,7 +439,7 @@ QUALIFIERS Tensor3 Tensor3::operator- () const
 		return res;
 	}
 
-QUALIFIERS Vector3 Tensor3::operator* (const Vector3 &v) const
+QUALIFIERS Vector3 operator* (const Vector3 &v) const
 	{
 		Vector3 res;
 		res.x = xx*v.x + xy*v.y + xz*v.z;
@@ -442,7 +457,7 @@ QUALIFIERS Tensor3 operator* (const real hh) const
 			hh*zx, hh*zy, hh*zz);
 	};
 		
-QUALIFIERS Tensor3 Tensor3::operator/ (const real r) const
+QUALIFIERS Tensor3 operator/ (const real r) const
 	{
 		Tensor3 result;
 		// did a test: X is the one on the right.
@@ -458,7 +473,7 @@ QUALIFIERS Tensor3 Tensor3::operator/ (const real r) const
 		return result;
 	}
 
-QUALIFIERS Tensor3 Tensor3::operator +(const Tensor3 &v) const
+QUALIFIERS Tensor3 operator +(const Tensor3 &v) const
 	{
 		Tensor3 result;
 		result.xx = xx + v.xx;
@@ -473,7 +488,7 @@ QUALIFIERS Tensor3 Tensor3::operator +(const Tensor3 &v) const
 		return result;
 	}
 
-QUALIFIERS Tensor3 Tensor3::operator -(const Tensor3 &v) const
+QUALIFIERS Tensor3 operator -(const Tensor3 &v) const
 	{
 		Tensor3 result;
 		result.xx = xx - v.xx;
@@ -488,7 +503,7 @@ QUALIFIERS Tensor3 Tensor3::operator -(const Tensor3 &v) const
 		return result;
 	}
 	
-QUALIFIERS Tensor3 Tensor3::operator *(const Tensor3 &X) const
+QUALIFIERS Tensor3 operator *(const Tensor3 &X) const
 	{
 		Tensor3 result;
 		result.xx = xx*X.xx + xy*X.yx + xz*X.zx;
@@ -503,7 +518,7 @@ QUALIFIERS Tensor3 Tensor3::operator *(const Tensor3 &X) const
 		return result;
 	}
 	
-QUALIFIERS Tensor3 Tensor3::operator +=(const Tensor3 &X) 
+QUALIFIERS Tensor3 operator +=(const Tensor3 &X) 
 	{
 		xx += X.xx;
 		xy += X.xy;
@@ -516,7 +531,7 @@ QUALIFIERS Tensor3 Tensor3::operator +=(const Tensor3 &X)
 		zz += X.zz;
 		return *this;
 	}
-	QUALIFIERS Tensor3 Tensor3::operator -=(const Tensor3 &X) 
+	QUALIFIERS Tensor3 operator -=(const Tensor3 &X) 
 	{
 		xx -= X.xx;
 		xy -= X.xy;
@@ -530,7 +545,7 @@ QUALIFIERS Tensor3 Tensor3::operator +=(const Tensor3 &X)
 		return *this;
 	}
 	
-	void Tensor3::Make3DRotationAboutAxis(Vector3 w, real t);
+	void Make3DRotationAboutAxis(Vector3 w, real t);
 	void spitout(void);
 };
 QUALIFIERS Tensor3 operator* (const real hh,const Tensor3 &X)
@@ -548,7 +563,6 @@ QUALIFIERS Tensor3 operator* (const real hh,const Tensor3 &X)
 		return result;
 	}
 
-
 // Not clear to me : do we want the following for NVCC to be here?
 // It actually makes sense to keep "matrix" here!
 
@@ -556,50 +570,55 @@ struct Matrix3
 {
 	real a[3][3];
 
-QUALIFIERS void Matrix3::Inverse(Matrix3 & result)
-{
-	// find+replace on the above
-
-	real det =	  a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])
-				+ a[0][1]*(a[2][0]*a[1][2]-a[1][0]*a[2][2])
-				+ a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
-
-	// Fill in matrix of minor determinants; 
-	// transposed with applied cofactors (signs)
-	
-	result.a[0][0] = a[1][1]*a[2][2]-a[1][2]*a[2][1];
-	result.a[1][0] = a[2][0]*a[1][2]-a[1][0]*a[2][2]; 
-	result.a[2][0] = a[1][0]*a[2][1]-a[1][1]*a[2][0];
-	result.a[0][1] = a[2][1]*a[0][2]-a[0][1]*a[2][2];
-	result.a[1][1] = a[0][0]*a[2][2]-a[0][2]*a[2][0];
-	result.a[2][1] = a[2][0]*a[0][1]-a[0][0]*a[2][1];
-	result.a[0][2] = a[0][1]*a[1][2]-a[0][2]*a[1][1];
-	result.a[1][2] = a[1][0]*a[0][2]-a[0][0]*a[1][2];
-	result.a[2][2] = a[0][0]*a[1][1]-a[1][0]*a[0][1];
-
-	//real * ptr = (real *)(result.a);
-	for (int i = 0; i < 3; i++)
-	for (int j = 0; j < 3; j++)
+	QUALIFIERS void Inverse(Matrix3 & result)
 	{
-		result.a[i][j] /= det; // 99% sure static array elems are contiguous but hey.
-	}
+		// find+replace on the above
+
+		real det =	  a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])
+					+ a[0][1]*(a[2][0]*a[1][2]-a[1][0]*a[2][2])
+					+ a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
+
+		// Fill in matrix of minor determinants; 
+		// transposed with applied cofactors (signs)
 	
-};
+		result.a[0][0] = a[1][1]*a[2][2]-a[1][2]*a[2][1];
+		result.a[1][0] = a[2][0]*a[1][2]-a[1][0]*a[2][2]; 
+		result.a[2][0] = a[1][0]*a[2][1]-a[1][1]*a[2][0];
+		result.a[0][1] = a[2][1]*a[0][2]-a[0][1]*a[2][2];
+		result.a[1][1] = a[0][0]*a[2][2]-a[0][2]*a[2][0];
+		result.a[2][1] = a[2][0]*a[0][1]-a[0][0]*a[2][1];
+		result.a[0][2] = a[0][1]*a[1][2]-a[0][2]*a[1][1];
+		result.a[1][2] = a[1][0]*a[0][2]-a[0][0]*a[1][2];
+		result.a[2][2] = a[0][0]*a[1][1]-a[1][0]*a[0][1];
 
-QUALIFIERS void Matrix3::multiply(real RHS[3], real output[3])
-{
-	output[0] = a[0][0]*RHS[0] + a[0][1]*RHS[1] + a[0][2]*RHS[2];
-	output[1] = a[1][0]*RHS[0] + a[1][1]*RHS[1] + a[1][2]*RHS[2];
-	output[2] = a[2][0]*RHS[0] + a[2][1]*RHS[1] + a[2][2]*RHS[2];
-};
+		//real * ptr = (real *)(result.a);
+		for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			result.a[i][j] /= det; // 99% sure static array elems are contiguous but hey.
+		}
+	
+	};
 
-
+	QUALIFIERS void multiply(real RHS[3], real output[3])
+	{
+		output[0] = a[0][0]*RHS[0] + a[0][1]*RHS[1] + a[0][2]*RHS[2];
+		output[1] = a[1][0]*RHS[0] + a[1][1]*RHS[1] + a[1][2]*RHS[2];
+		output[2] = a[2][0]*RHS[0] + a[2][1]*RHS[1] + a[2][2]*RHS[2];
+	};
+	
 };
 
 extern Tensor3 ID3x3;
 extern Tensor3 zero3x3;
 
-Vector3 QUALS Make3(Vector2 & v, real scalar)
+struct f64_tens3mag {
+	real bx, by, bz, Px, Py, Pz, Hx, Hy, Hz;
+};
+struct f64_vec3mag {
+	real b, P, H;
+};
+Vector3 QUALS Make3(const Vector2 & v, const real scalar)
 {
 	Vector3 result;
 	result.x = v.x;
@@ -612,8 +631,8 @@ Vector3 QUALS Make3(Vector2 & v, real scalar)
 struct Symmetric3
 {
 	real xx,yy,zz,xy,xz,yz;
-	Symmetric3() ;
-	Symmetric3(real x_x, real x_y, real y_y, real x_z, real y_z, real z_z) ;
+	QUALIFIERS Symmetric3() {};
+	QUALIFIERS Symmetric3(real x_x, real x_y, real y_y, real x_z, real y_z, real z_z) ;
 	
 	Vector3 QUALIFIERS operator* (const Vector3 &v) const;
 };
@@ -631,7 +650,7 @@ struct Symmetric2
 #define f64_vec3 Vector3
 #define f64_tens2 Tensor2
 #define f64_tens3 Tensor3
-#define u32 unsigned long
+//#define u32 unsigned long
 
 
 //struct vertinfo
@@ -675,6 +694,10 @@ struct species_vec3
 	f64_vec3 neut, ion, elec;
 };
 
+struct f64_vec4
+{
+	f64 x[4];
+};
 #endif
 
 
