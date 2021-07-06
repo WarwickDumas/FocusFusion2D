@@ -1,5 +1,5 @@
 # FocusFusion2D
-This is a project to simulate a cross-section of a filament in a dense plasma focus. It is not operational yet.
+This is a project to simulate a 2-dimensional cross-section of a filament in a dense plasma focus. 
 
 18/05/17:
 The large body of code from solver.cpp is devoted to production solving of ODEs for EM fields under Ampere-Darwin
