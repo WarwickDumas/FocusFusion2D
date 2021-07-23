@@ -92,30 +92,24 @@ __device__ f64 ArtificialUpliftFactor(f64 n_i, f64 n_n)
 	// We do not care much about small amt of neutrals as much as small amt of ions.
 
 	if (n_i + n_n > 1.0e15) return 1.0;
-
 	f64 t = (n_n*1.0e15 + n_i*(n_i + n_n)) / ((n_i + n_n)*(n_i + n_n));
 	return min(t*t,1.0e6);
-
 	// Having to boost up when < 1e15 because our dodgy point has > 1e14.
 }
+
+
 __device__ f64 ArtificialUpliftFactor_MT(f64 n_i, f64 n_n)
 {
-	// At n_i = 1e9, nn 1e14 we want nn equiv 1e20 so 1e6 uplift
-	// We do not care much about small amt of neutrals as much as small amt of ions.
-
 	if (n_i > 1.0e13) return 1.0;
 	
 	f64 additional_nn = min(exp(-n_i*n_i/0.5e24)*(1.0e30 / (n_i)), 1.0e20); // high effective density to produce hydrodynamics
-
+	// n <= 1e10 : additional_nn ~= 1e20
+	// n == 1e11 : additional_nn ~= 1e19
+	// n == 1e12 : additional_nn ~= 1e17
+	// n == 1e13 : additional_nn ~= 1e-70
 	return 1.0 + additional_nn /n_n;
-
-	//if (n_i + n_n > 1.0e15) return 1.0;
-	
-	//f64 t = (n_n*1.0e15 + n_i*(n_i + n_n)) / ((n_i + n_n)*(n_i + n_n));
-	//return min(t*t,1.0e6);
-
-	// Having to boost up when < 1e15 because our dodgy point has > 1e14.
 }
+
 
 __device__ __forceinline__ void CalculateCircumcenter(f64_vec2 * p_cc, f64_vec2 poscorner0, f64_vec2 poscorner1, f64_vec2 poscorner2)
 {
@@ -127,8 +121,8 @@ __device__ __forceinline__ void CalculateCircumcenter(f64_vec2 * p_cc, f64_vec2 
 	p_cc->x = (C.y*modB - Bb.y*modC) / D + poscorner0.x;
 	p_cc->y = (Bb.x*modC - C.x*modB) / D + poscorner0.y;
 	// formula agrees with wikipedia so why does it give a stupid result.
-
 }
+
 
 __device__ __forceinline__ bool TestDomainPos(f64_vec2 pos)
 {
@@ -138,6 +132,7 @@ __device__ __forceinline__ bool TestDomainPos(f64_vec2 pos)
 		(pos.x*pos.x + (pos.y - CATHODE_ROD_R_POSITION)*(pos.y - CATHODE_ROD_R_POSITION) > CATHODE_ROD_RADIUS*CATHODE_ROD_RADIUS)		
 		);
 }
+
 
 __device__ f64 GetRecombinationRate_given_v(f64 const Te, int i_v)
 {
@@ -2871,173 +2866,6 @@ __global__ void kernelInferMinorDensitiesFromShardModel(
 	}
 }
 
-
-
-__global__ void kernelCalculate_ita_visc(
-	structural * __restrict__ p_info_minor,
-	nvals * __restrict__ p_n_minor,
-	T3 * __restrict__ p_T_minor,
-
-	f64 * __restrict__ p_nu_ion_minor,
-	f64 * __restrict__ p_nu_elec_minor,
-	f64 * __restrict__ p_nu_nn_visc,
-	f64 * __restrict__ p_ita_par_ion_minor,
-	f64 * __restrict__ p_ita_par_elec_minor,
-	f64 * __restrict__ p_ita_neutral_minor,
-
-	int * __restrict__ p_iSelect,
-	int * __restrict__ p_iSelectNeut
-	)
-{
-	// Save nu_iHeart, nu_eHeart, nu_nn_visc.
-
-	f64 TeV, sigma_MT, sigma_visc, sqrt_T, nu_en_visc;
-	T3 T;
-	f64 nu_in_visc, nu_ni_visc, nu_ii, nu_nn;
-	nvals our_n;
-	long const index = threadIdx.x + blockIdx.x * blockDim.x; 
-	structural info = p_info_minor[index];
-
-	// DEBUG
-	//if (index == CHOSEN) printf("index %d info.flag %d info.pos %1.13E %1.14E \n",
-	//	index, info.flag, info.pos.x, info.pos.y);
-	int Selected_ie = 0, Selected_neut = 0;
-
-	if (p_iSelect != 0) {
-		Selected_ie = p_iSelect[index];
-		Selected_neut = p_iSelectNeut[index];
-	} else {
-		Selected_ie = 1;
-		Selected_neut = 1;
-	};
-
-	if (((info.flag == DOMAIN_VERTEX)  ||
-		// (info.flag == OUTERMOST) ||
-		(info.flag == DOMAIN_TRIANGLE) || 
-		( (info.flag == CROSSING_INS) && (TestDomainPos(info.pos)))
-		)	&& 
-			((Selected_ie > 0) || (Selected_neut > 0))
-		)
-	{
-		// We have not ruled out calculating traffic into outermost vertex cell - so this needs nu calculated in it.
-		// (Does it actually try and receive traffic?)
-
-		our_n = p_n_minor[index]; // never used again once we have kappa
-		T = p_T_minor[index];
-
-		TeV = T.Te * one_over_kB;
-		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
-
-		// commented.
-//		sigma_visc *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
-//		sigma_MT *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
-		
-		sqrt_T = sqrt(T.Te);
-		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
-		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves *
-			//max(MINIMUM_NU_EI_DENSITY,our_n.n) *
-			// do we want to enhance nu here or not?
-			our_n.n*
-			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);
-
-		//if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Te < 1.1e-14)
-		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
-		if (Selected_ie == 0) {
-			p_ita_par_elec_minor[index] = 0.0;
-		} else {
-			p_ita_par_elec_minor[index] =
-				//0.73*our_n.n*T.Te / nu_eiBar; // ? Check it's not in eV in formulary
-				0.5*our_n.n*T.Te / ((0.3*0.87 + 0.6)*nu_eiBar + 0.6*nu_en_visc);
-			// This from Zhdanov chapter 7. Compare Braginskii.
-			// 0.5/(0.3*0.87+0.6) = 0.58 not 0.73
-		};
-		p_nu_elec_minor[index] = (0.3*0.87 + 0.6)*nu_eiBar + 0.6*nu_en_visc;
-
-		if (T.Te <= 0.0) printf("ita calc: Negative Te encountered iMinor = %d /n", index);
-
-//		if ((index == 85822) || (index == 24335))
-//			printf("\n###################################\nindex %d nu_e %1.14E ita %1.14E n %1.14E Te %1.14E \nnu_eiBar %1.14E nu_en_visc %1.14E\n\n",
-//				index, (0.3*0.87 + 0.6)*nu_eiBar + 0.6*nu_en_visc, p_ita_par_elec_minor[index],
-//				our_n.n, T.Te, nu_eiBar, nu_en_visc);
-		
-		//nu_eHeart:
-	//	nu.e = nu_en_visc + 1.87*nu_eiBar;
-
-	// FOR NOW IT DOES NOT MATTER BECAUSE WE IMPLEMENTED UNMAGNETISED
-	// HOWEVER, WE SHOULD PROBABLY EXPECT THAT IN THE END OUR NU_eHEART IS RELEVANT TO OUTPUT HERE
-
-		// TeV = T.Ti*one_over_kB;
-		// Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc); // could easily save one call
-		sqrt_T = sqrt(T.Ti); // again not that hard to save one call
-		nu_in_visc = our_n.n_n * sigma_visc * sqrt(T.Ti / m_ion + T.Tn / m_n);
-		nu_ni_visc = nu_in_visc * (our_n.n / our_n.n_n);
-		nu_ii = our_n.n*kB_to_3halves*Get_lnLambda_ion_d(our_n.n, T.Ti) *Nu_ii_Factor / (sqrt_T*T.Ti);
-				
-		//if (index == CHOSEN) printf("got to here. T.Ti %1.9E our_n.n %1.9E LOW_THRESH %1.9E \n",
-		//	T.Ti, our_n.n, LOW_THRESH_FOR_VISC_CALCS);
-
-		//if ((our_n.n < LOW_THRESH_FOR_VISC_CALCS) || (T.Ti < 1.1e-14)
-		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS))
-		
-		if (Selected_ie == 0) {
-			p_ita_par_ion_minor[index] = 0.0;
-		} else {
-			p_ita_par_ion_minor[index] = 0.5*our_n.n*T.Ti / (0.3*nu_ii + 0.4*nu_in_visc + 0.000273*nu_eiBar);
-		};
-		
-		//0.96*our_n.n*T.Ti / nu_ii; // Formulary
-		p_nu_ion_minor[index] = 0.3*nu_ii + 0.4*nu_in_visc + 0.000273*nu_eiBar;
-		
-
-		// I think we just need to knock out points where ita_par_ion_minor ends up low
-		// rather than specifically low density.
-
-		// Trouble is that will just give us nothing out of a shock front.
-
-		// Maybe need to be more careful -- go 2 passes
-
-
-		// What applies to viscosity will surely apply to heat conduction also.
-		// We'll have to compare Zhdanov with what we have got.
-
-		//nu_nn_visc:
-		nu_nn = our_n.n_n * Estimate_Neutral_Neutral_Viscosity_Cross_section_d(T.Tn * one_over_kB)
-			* sqrt(T.Tn / m_n);
-						
-		f64 nu_n = 0.3*nu_nn + 0.4*nu_ni_visc;
-
-		// This is set at 1e10
-		//if ((our_n.n_n < LOW_THRESH_FOR_VISC_CALCS)
-		//	|| (info.pos.dot(info.pos) > VISCOSITY_MAX_RADIUS*VISCOSITY_MAX_RADIUS)) {
-		if (Selected_neut == 0){
-			p_ita_neutral_minor[index] = 0.0;
-		} else {
-			f64 ita = our_n.n_n*T.Tn / nu_n;
-			
-			// NEW THRESHOLD HERE TO STOP NEUTRAL VISC:
-			if (T.Tn < 1.1e-14) ita = 0.0;
-
-			p_ita_neutral_minor[index] = ita;
-		};
-
-		p_nu_nn_visc[index] = nu_n; 
-
-	} else {
-		p_ita_par_elec_minor[index] = 0.0;
-		p_nu_elec_minor[index] = 0.0;
-		p_ita_par_ion_minor[index] = 0.0;
-		p_nu_ion_minor[index] = 0.0;
-		p_ita_neutral_minor[index] = 0.0;
-		p_nu_nn_visc[index] = 0.0;		
-		// For CROSSING_CATH this is fine.
-	}
-}
-
-// Historical record
-// We have to reform heat cond so that we use min n but a good T throughout kappa
-// We do try to use same n in numer and denom, including in ln Lambda.
-// We have too many spills in the routine so we should make a separate ionisation routine
-// and try to do species separately.
 
 
 /*

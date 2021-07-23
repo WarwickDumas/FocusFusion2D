@@ -2,35 +2,15 @@
 #define cuda_struct_h
 // Avoid allocating and deallocating:
 
+#define MAXNEIGH_d 12
+
 // Here is what should be basically common object...
 // but not necessarily.
 
 // vector_tensor.cu probably going to be needed
 #include "vector_tensor.cu"
-#include <conio.h>
-
-#define MAXNEIGH    42  // large number needed to cater for links on aux mesh if we do not minimize connections.
-#define MAXNEIGH_d  12
-
-// 12*32768*5 = 2MB .. just to keep things in perspective.
-// We should keep the number down just to reduce fetch size.
-// Let's keep it real. nvT is best for our fetches and therefore is best.
-
-long const numTriTiles = 288; // note that there are also centrals
-long const numTilesMajor = 288;
-long const numTilesMinor = 432; // 432 = 288+144
-					// 456*256 = 304*256 + 304*128
-			
-// numTriTiles == numTilesMajor because the two sets are bijective.
-// Then we also have to assign central minors to tiles, twice the size of the major tiles...
-
-long const threadsPerTileMinor = 256;
-long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
-long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
-long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
-long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
-
-
+#include "FFxtubes.h"
+#include "mesh.h"
 
 	// we do not just do the mesh advection every time because
 	// this 
@@ -58,6 +38,10 @@ long const BEGINNING_OF_CENTRAL = threadsPerTileMinor*numTriTiles;
 struct CHAR4 {
 	char flag, per0, per1, per2;
 }; // 4 bytes
+struct CHAR3 {
+	char c1, c2, c3;
+};	// Can see the genuine case for padding it to 4 bytes ie using CHAR4 and never CHAR3.
+
 struct LONG3 {
 	long i1, i2, i3;
 }; // 12 bytes
@@ -72,6 +56,7 @@ struct twoshort {
 
 struct structural {
 	f64_vec2 pos; // Only ever used with flag, therefore put together.
+	// NO: because flag isn't only used with pos. So basically flatpack would have been better in general.
 	short neigh_len;
 	char flag;     // we want to now include "has_periodic"
 	// does that mean flag, has_periodic become char ? 
@@ -80,6 +65,66 @@ struct structural {
 
 struct nT {
 	f64 n; f64 T;
+};
+
+struct v4 {
+	f64_vec2 vxy;
+	double viz, vez;
+};
+
+struct nvals {
+	f64 n, n_n;
+	__device__ __host__ nvals(f64 n_, f64 nn_) {
+		n = n_; n_n = nn_;
+	}
+	void __device__ __forceinline__ operator+= (const nvals &nval) {
+		n += nval.n;
+		n_n += nval.n_n;
+	}
+	__device__ __host__ nvals() {}
+};
+nvals __device__ inline operator* (const real hh, const nvals & nval) 
+{
+	return nvals(hh*nval.n, hh*nval.n_n);
+}
+
+struct f64_12 {
+	f64 n[12];
+};
+
+struct T2 {
+	f64 Ti, Te;
+};
+struct T3 {
+	f64 Tn, Ti, Te;
+	__device__ __host__ T3(f64 Tn_, f64 Ti_, f64 Te_) {
+		Tn = Tn_; Ti = Ti_; Te = Te_;
+	}
+	__device__ __host__ T3(){}
+	void __device__ __forceinline__ operator+= (const T3 &T) {
+		Tn += T.Tn;
+		Ti += T.Ti;
+		Te += T.Te;
+	}
+};
+T3 __device__ inline operator* (const real hh, const T3 &T) 
+{
+	return T3(hh*T.Tn, hh*T.Ti, hh*T.Te);
+};
+
+
+struct AAdot {
+	f64 Az, Azdot;
+};
+
+struct OhmsCoeffs {
+	f64 sigma_e_zz, sigma_i_zz;
+	f64_vec2 beta_xy_z;
+	f64 beta_ne, beta_ni;
+};
+
+struct species3 {
+	f64 n, i, e;
 };
 
 struct Systdata {
@@ -149,17 +194,130 @@ struct Systdata {
 	int Systdata::LoadHost(const char [], bool);
 	int Systdata::SaveHost(const char str[]);
 	void Systdata::AsciiOutput (const char filename[]) const ;
+	void Systdata::AsciiOutputEdges (const char filename[]) const ;
+	void Systdata::AsciiOutput4Values (FILE * file, real eval) const ;
+	void Systdata::AsciiOutputSpecific (FILE * file,real eval) const ;
+
 	~Systdata();
 };
 
 // We need to move these funcs out into a .cu file.
 
 
-void PerformCUDA_Advance_2 (
-		const Systdata * pX_host, // populate in CPU MSVC routine...
-		long numVerts,
-		const real hsub, 
-		const int numSubsteps,
-		const Systdata * pX_host_target
+
+class cuSyst {
+private:
+public:
+	bool bInvoked, bInvokedHost;
+	long Nverts, Ntris, Nminor;
+	
+	structural * p_info;
+	 
+	 long * p_izTri_vert;
+	 long * p_izNeigh_vert;
+	 char * p_szPBCtri_vert;   // MAXNEIGH*numVertices
+	 char * p_szPBCneigh_vert;
+
+	 long * p_izNeigh_TriMinor;
+	 char * p_szPBC_triminor; // 6*numTriangles
+	 
+	 LONG3 * p_tri_corner_index;
+	 CHAR4 * p_tri_periodic_corner_flags;
+
+	 LONG3 * p_tri_neigh_index;
+	 CHAR4 * p_tri_periodic_neigh_flags;    
+	 
+	 LONG3 * p_who_am_I_to_corner;
+ 
+	 nvals * p_n_minor;
+	 nvals * p_n_major;
+	 T3 * p_T_minor; 
+	 f64_vec3 * p_v_n;
+	 v4 * p_vie;
+	 AAdot * p_AAdot;
+	 f64_vec3 * p_B;
+
+	 f64 * p_Lap_Az;
+	 f64_vec2 * p_v_overall_minor;
+	 nvals * p_n_upwind_minor;
+
+	 //f64_vec2 * p_pos; // vertex positions are a subset?
+	 // We made structural * p_info assuming if we want pos we also want flags...
+	 
+	 f64 * p_AreaMinor;
+	 f64 * p_AreaMajor;
+	 f64_vec2 * p_cc;
+
+	 char * p_iVolley;
+
+	cuSyst();
+	int Invoke();
+	int InvokeHost();
+	void SendToHost(cuSyst & Xhost);
+	void SendToDevice(cuSyst & Xdevice);
+	void CopyStructuralDetailsFrom(cuSyst & src); // on device
+
+	void ReportDifferencesHost(cuSyst &X2);
+
+	void PopulateFromTriMesh(TriMesh * pX);
+	void PopulateTriMesh(TriMesh * pX);
+
+	void PerformCUDA_Advance(//const 
+		cuSyst * pX_target, //const
+		cuSyst * pX_half);
+
+	void cuSyst::PerformCUDA_AdvectionCompressionInstantaneous(//const 
+		f64 const Timestep,
+		cuSyst * pX_target,
+		cuSyst * pX_half);
+
+	void PerformCUDA_Advance_noadvect(//const 
+		cuSyst * pX_target, //const
+		cuSyst * pX_half);
+
+	void PerformCUDA_Advance_Debug(const cuSyst * pX_target, const cuSyst * pX_half,
+		const cuSyst * p_cuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+		TriMesh * pDestMesh);
+
+	void Output(const char * filename);
+
+	void cuSyst::Load(const char filename[]);
+	void cuSyst::Save(const char filename[]);
+
+	void cuSyst::SaveGraphs(const char filename[]);
+
+	void ZeroData();
+	~cuSyst();
+};
+
+
+
+void PerformCUDA_Invoke_Populate (
+	cuSyst * pX_host, // populate in calling routine...
+	long numVerts,
+	f64 InnermostFrillCentroidRadius,
+	f64 OutermostFrillCentroidRadius,
+	long numStartZCurrentTriangles_,
+	long numEndZCurrentTriangles_
 		);
+
+void PerformCUDA_RunStepsAndReturnSystem(cuSyst * pX_host);
+void PerformCUDA_RunStepsAndReturnSystem_Debug(cuSyst * pcuSyst_host, cuSyst * p_cuSyst_compare, TriMesh * pTriMesh, TriMesh * pTriMeshhalf,
+	TriMesh * pDestMesh);
+
+void PerformCUDA_Revoke();
+
+void FreeVideoResources ();
+
+extern __host__ bool Call(cudaError_t cudaStatus, char str[]);
+
+#define CallMAC(cudaStatus) Call(cudaStatus, #cudaStatus )   
+
+#define Set_f64_constant(dest, src) { \
+		Call(cudaGetSymbolAddress((void **)(&f64address), dest ), \
+			"cudaGetSymbolAddress((void **)(&f64address), dest )");\
+		Call(cudaMemcpy( f64address, &src, sizeof(f64),cudaMemcpyHostToDevice),\
+			"cudaMemcpy( f64address, &src, sizeof(f64),cudaMemcpyHostToDevice) src dest");\
+						}
+
 #endif

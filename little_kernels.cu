@@ -2782,6 +2782,7 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 		// which again is only about half as much. BUT WE KNOW HE WORKS in DOUBLE Braginskii ??
 		// says Vranjes -- so check that the rest of the formula does not compensate.
 
+
 		// Would like consistent approach.
 		// 1. We approached the heat flux directly per Golant. Where did it say what nu to use and how to add up?
 		// Can we follow our own logic and then compare with what Zhdanov says?
@@ -2799,12 +2800,24 @@ __global__ void kernelCalculate_kappa_nu_vertices(
 		//nu_eHeart:
 		nu.e = nu_en_visc + 1.87*nu_eiBar;
 		
+
+		if (iVertex == VERTCHOSEN) {
+			printf("iVertex %d nu.n %1.10E nu_i %1.10E nu_e %1.10E nu_eiBar %1.10E nu_ii %1.10E \nnu_eiBar over n %1.10E nu_ii over n %1.10E \n", 
+				iVertex, nu.n, nu.i, nu.e, nu_eiBar, nu_ii, nu_eiBar/our_n.n,
+				nu_ii/our_n.n);
+		}
+
 		// Comparison with Zhdanov's denominator for ita looks like this one overestimated
 		// by a factor of something like 1.6?
 
 		f64 kappa_n = NEUTRAL_KAPPA_FACTOR * our_n.n_n * T.Tn / (m_n * nu.n);
 		f64 kappa_i = (20.0 / 9.0) * our_n.n*T.Ti / (m_i * nu.i);
 		f64 kappa_e = 2.5*our_n.n*T.Te / (m_e * nu.e);
+
+		if (iVertex == VERTCHOSEN) {
+			printf("iVertex %d kappa_n %1.10E kappa_i %1.10E kappa_e %1.10E nn %1.10E n %1.10E Tn %1.10E Ti %1.10E Te %1.10E\n",
+				iVertex, kappa_n, kappa_i, kappa_e, our_n.n_n, our_n.n, T.Tn, T.Ti, T.Te);
+		};
 
 		//if ((TESTKAPPA)) printf("kappa_e %1.9E our_n.n %1.9E Te %1.9E nu %1.9E\n",
 		//	kappa_e, our_n.n, T.Te, nu.e);
@@ -4773,18 +4786,58 @@ __global__ void kernelInterpolateVarsAndPositions(
 // Still there is premature optimization here -- none of this happens OFTEN.
 
 __global__ void DivideVec2(f64_vec2 * __restrict__ p_update,
-	f64_vec2 * __restrict__ p_apply)
+	f64_vec2 * __restrict__ p_apply, f64_vec2 * __restrict__ p_numer)
 {
 	long const index = blockIdx.x*blockDim.x + threadIdx.x;
-	f64_vec2 jill = p_update[index];
+	f64_vec2 jill;
 	f64_vec2 jill2 = p_apply[index];
+	f64_vec2 numer = p_numer[index];
 
-	jill.x = (jill2.x - jill.x) / (jill.x + 1.0);
-	jill.y = (jill2.y - jill.y) / (jill.y + 1.0);
+	jill.x = numer.x / (jill2.x + 1.0);
+	jill.y = numer.y / (jill2.y + 1.0);
 
 	p_update[index] = jill;
 }
 
+__global__ void Divide(f64 * __restrict__ p_outputz, f64 * __restrict__ p_denom, f64 * __restrict__ p_numer)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	p_outputz[index] = p_numer[index] / (p_denom[index] + 1.0);
+}
+
+__global__ void kernelDivideAdd3things(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_denom, f64_vec2 * __restrict__ p_summand1,
+	f64_vec2 * __restrict__ p_summand2, f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_denomz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+
+	f64_vec2 denom = p_denom[index];
+	f64_vec2 numer = p_summand1[index] + p_summand2[index] + p_summand3[index];
+	f64_vec2 output;
+	output.x = numer.x / (denom.x + 1.0);
+	output.y = numer.y / (denom.y + 1.0);
+//	output.z = numer.z / (denom.z + 1.0);
+	p_output2[index] = output;
+	f64 denomz = p_denomz[index];
+	f64 numerz = p_summandz1[index] + p_summandz2[index] + p_summandz3[index];
+	p_outputz[index] = numerz / (denomz + 1.0);
+}
+
+__global__ void kernelAdd3things
+(f64_vec2 * __restrict__ p_output2,
+	f64_vec2 * __restrict__ p_summand1, f64_vec2 * __restrict__ p_summand2,
+	f64_vec2 * __restrict__ p_summand3,
+	f64 * __restrict__ p_outputz, f64 * __restrict__ p_summandz1,
+	f64 * __restrict__ p_summandz2, f64 * __restrict__ p_summandz3)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	p_output2[index] = p_summand1[index] + p_summand2[index] + p_summand3[index];
+	p_outputz[index] = p_summandz1[index] + p_summandz2[index] + p_summandz3[index];
+}
+	
+	
 __global__ void SubtractVec2(f64_vec2 * __restrict__ p_update,
 	f64_vec2 * __restrict__ p_apply)
 {
