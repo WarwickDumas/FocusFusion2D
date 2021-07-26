@@ -2601,9 +2601,9 @@ __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 		TeV = T.Te * one_over_kB;
 		Estimate_Ion_Neutral_Cross_sections_d(TeV, &sigma_MT, &sigma_visc);
 		sqrt_T = sqrt(T.Te);
+		sigma_visc *= ArtificialUpliftFactor_MT(our_n.n, our_n.n_n);
 		nu_en_visc = our_n.n_n * sigma_visc * sqrt_T * over_sqrt_m_e;
 
-		sigma_visc *= ArtificialUpliftFactor(our_n.n, our_n.n_n);
 
 		f64 nu_eiBar = nu_eiBarconst * kB_to_3halves * max(MINIMUM_NU_EI_DENSITY, our_n.n) *
 			Get_lnLambda_d(our_n.n, T.Te) / (T.Te*sqrt_T);

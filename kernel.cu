@@ -88,6 +88,8 @@
 
 __device__ f64 ArtificialUpliftFactor(f64 n_i, f64 n_n)
 {
+	// Used in ionization uplift and in heat inter-species transfer.
+
 	// At n_i = 1e9, nn 1e14 we want nn equiv 1e20 so 1e6 uplift
 	// We do not care much about small amt of neutrals as much as small amt of ions.
 
@@ -101,6 +103,7 @@ __device__ f64 ArtificialUpliftFactor(f64 n_i, f64 n_n)
 __device__ f64 ArtificialUpliftFactor_MT(f64 n_i, f64 n_n)
 {
 	if (n_i > 1.0e13) return 1.0;
+	// Used in crushing v to be hydrodynamic and in viscous ita.
 	
 	f64 additional_nn = min(exp(-n_i*n_i/0.5e24)*(1.0e30 / (n_i)), 1.0e20); // high effective density to produce hydrodynamics
 	// n <= 1e10 : additional_nn ~= 1e20
@@ -27213,7 +27216,8 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 
 	f64_vec3 * __restrict__ p_MAR_neut,
 	NTrates * __restrict__ p_NT_addition_rate,
-	NTrates * __restrict__ p_NT_addition_tri)
+	NTrates * __restrict__ p_NT_addition_tri,
+	int * __restrict__ p_Select)
 {
 
 	// ************************************************************************
@@ -27295,7 +27299,9 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 		// !
 		if ((info.flag == DOMAIN_VERTEX) 
 			// && (info.pos.modulus() < 4.9) -- if we have this then need in d/dbeta also.
-			&& (shared_ita_par_verts[threadIdx.x] > 0.0))
+			&& (shared_ita_par_verts[threadIdx.x] > 0.0)
+			&& (p_Select[iVertex + BEGINNING_OF_CENTRAL] != 0)
+			)
 			//|| (info.flag == OUTERMOST)) 
 		{
 			// We are losing energy if there is viscosity into OUTERMOST.
@@ -27308,7 +27314,9 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 			{
 				// Tri 0 is anticlockwise of neighbour 0, we think
 
-				{
+				// Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
+
+				if (p_Select[izTri[i]] != 0) {
 					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
 					{
 						if (shared_ita_par_verts[threadIdx.x] < shared_ita_par[izTri[i] - StartMinor])
@@ -27336,131 +27344,169 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 						// I understand why we are still doing minimum ita at the wall but we would ideally like to stop.
 
 					};
-				} // Guaranteed DOMAIN_VERTEX never needs to skip an edge; we include CROSSING_INS in viscosity.
 
-				f64_vec2 gradvx, gradvy, gradvz;
-				f64_vec3 htg_diff;
-				f64_vec2 edge_normal;
 
-				if (ita_par > 0.0) // note it was the minimum taken.
-				{
-					f64_vec3 opp_v, prev_v, next_v;
-					f64_vec2 opppos, prevpos, nextpos;
-					// ideally we might want to leave position out of the loop so that we can avoid reloading it.
+					f64_vec2 gradvx, gradvy, gradvz;
+					f64_vec3 htg_diff;
+					f64_vec2 edge_normal;
 
-					short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
-					short inext = i + 1; if (inext >= tri_len) inext = 0;
-
-					if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
+					if (ita_par > 0.0) // note it was the minimum taken.
 					{
-						prev_v = shared_v_n[izTri[iprev] - StartMinor];
-						prevpos = shared_pos[izTri[iprev] - StartMinor];
-					}
-					else {
-						prev_v = p_v_n_minor[izTri[iprev]];
-						prevpos = p_info_minor[izTri[iprev]].pos;
-					}
-					if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-						prevpos = Clockwise_d*prevpos;
-						RotateClockwise(prev_v);
-					}
-					if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-						prevpos = Anticlockwise_d*prevpos;
-						RotateAnticlockwise(prev_v);
-					}
+						f64_vec3 opp_v, prev_v, next_v;
+						f64_vec2 opppos, prevpos, nextpos;
+						// ideally we might want to leave position out of the loop so that we can avoid reloading it.
 
-					if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
-					{
-						opp_v = shared_v_n[izTri[i] - StartMinor];
-						opppos = shared_pos[izTri[i] - StartMinor];
+						short iprev = i - 1; if (iprev < 0) iprev = tri_len - 1;
+						short inext = i + 1; if (inext >= tri_len) inext = 0;
 
-						//		if (iVertex == VERTCHOSEN) printf("opp_v %1.9E izTri[i] %d \n", opp_v.x, izTri[i]);
+						if ((izTri[iprev] >= StartMinor) && (izTri[iprev] < EndMinor))
+						{
+							prev_v = shared_v_n[izTri[iprev] - StartMinor];
+							prevpos = shared_pos[izTri[iprev] - StartMinor];
+						}
+						else {
+							prev_v = p_v_n_minor[izTri[iprev]];
+							prevpos = p_info_minor[izTri[iprev]].pos;
+						}
+						if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
+							prevpos = Clockwise_d*prevpos;
+							RotateClockwise(prev_v);
+						}
+						if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
+							prevpos = Anticlockwise_d*prevpos;
+							RotateAnticlockwise(prev_v);
+						}
 
-					}
-					else {
-						opp_v = p_v_n_minor[izTri[i]];
-						opppos = p_info_minor[izTri[i]].pos;
+						if ((izTri[i] >= StartMinor) && (izTri[i] < EndMinor))
+						{
+							opp_v = shared_v_n[izTri[i] - StartMinor];
+							opppos = shared_pos[izTri[i] - StartMinor];
 
-						//	if (iVertex == VERTCHOSEN) printf("opp_v %1.9E v_n_minor izTri[i] %d \n", opp_v.x, izTri[i]);
-					}
-					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-						opppos = Clockwise_d*opppos;
-						RotateClockwise(opp_v);
-					}
-					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-						opppos = Anticlockwise_d*opppos;
-						RotateAnticlockwise(opp_v);
-					}
+							//		if (iVertex == VERTCHOSEN) printf("opp_v %1.9E izTri[i] %d \n", opp_v.x, izTri[i]);
 
-					if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
-					{
-						next_v = shared_v_n[izTri[inext] - StartMinor];
-						nextpos = shared_pos[izTri[inext] - StartMinor];
-					}
-					else {
-						next_v = p_v_n_minor[izTri[inext]];
-						nextpos = p_info_minor[izTri[inext]].pos;
-					}
-					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-						nextpos = Clockwise_d*nextpos;
-						RotateClockwise(next_v);
-					}
-					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-						nextpos = Anticlockwise_d*nextpos;
-						RotateAnticlockwise(next_v);
-					}
+						}
+						else {
+							opp_v = p_v_n_minor[izTri[i]];
+							opppos = p_info_minor[izTri[i]].pos;
 
-					edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-					edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+							//	if (iVertex == VERTCHOSEN) printf("opp_v %1.9E v_n_minor izTri[i] %d \n", opp_v.x, izTri[i]);
+						}
+						if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+							opppos = Clockwise_d*opppos;
+							RotateClockwise(opp_v);
+						}
+						if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+							opppos = Anticlockwise_d*opppos;
+							RotateAnticlockwise(opp_v);
+						}
 
-					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-						edge_normal = ReconstructEdgeNormal(prevpos, info.pos, nextpos, opppos);
+						if ((izTri[inext] >= StartMinor) && (izTri[inext] < EndMinor))
+						{
+							next_v = shared_v_n[izTri[inext] - StartMinor];
+							nextpos = shared_pos[izTri[inext] - StartMinor];
+						}
+						else {
+							next_v = p_v_n_minor[izTri[inext]];
+							nextpos = p_info_minor[izTri[inext]].pos;
+						}
+						if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
+							nextpos = Clockwise_d*nextpos;
+							RotateClockwise(next_v);
+						}
+						if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
+							nextpos = Anticlockwise_d*nextpos;
+							RotateAnticlockwise(next_v);
+						}
+
+						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+						edge_normal.y = THIRD * (prevpos.x - nextpos.x);
+
+						if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+							edge_normal = ReconstructEdgeNormal(prevpos, info.pos, nextpos, opppos);
 
 #ifdef INS_INS_3POINT
-					if (TestDomainPos(prevpos) == false) {
-
-						gradvx = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n_verts[threadIdx.x].x, next_v.x, opp_v.x
-						);
-						gradvy = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n_verts[threadIdx.x].y, next_v.y, opp_v.y
-						);
-						gradvz = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n_verts[threadIdx.x].z, next_v.z, opp_v.z
-						);
-
-					} else {
-						if (TestDomainPos(nextpos) == false) {
+						if (TestDomainPos(prevpos) == false) {
 
 							gradvx = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.x, shared_v_n_verts[threadIdx.x].x, opp_v.x
+								shared_v_n_verts[threadIdx.x].x, next_v.x, opp_v.x
 							);
 							gradvy = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.y, shared_v_n_verts[threadIdx.x].y, opp_v.y
+								shared_v_n_verts[threadIdx.x].y, next_v.y, opp_v.y
 							);
 							gradvz = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.z, shared_v_n_verts[threadIdx.x].z, opp_v.z
+								shared_v_n_verts[threadIdx.x].z, next_v.z, opp_v.z
 							);
 
-						} else {
+						}
+						else {
+							if (TestDomainPos(nextpos) == false) {
+
+								gradvx = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.x, shared_v_n_verts[threadIdx.x].x, opp_v.x
+								);
+								gradvy = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.y, shared_v_n_verts[threadIdx.x].y, opp_v.y
+								);
+								gradvz = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.z, shared_v_n_verts[threadIdx.x].z, opp_v.z
+								);
+
+							}
+							else {
+								gradvx = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.x, shared_v_n_verts[threadIdx.x].x, next_v.x, opp_v.x
+								);
+								gradvy = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.y, shared_v_n_verts[threadIdx.x].y, next_v.y, opp_v.y
+								);
+								gradvz = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.z, shared_v_n_verts[threadIdx.x].z, next_v.z, opp_v.z
+								);
+							};
+						};
+
+#else
+						if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+						{
+							// One of the sides is dipped under the insulator -- set transverse deriv to 0.
+							// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
+
+							gradvx = (opp_v.x - shared_v_n_verts[threadIdx.x].x)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+							gradvy = (opp_v.y - shared_v_n_verts[threadIdx.x].y)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+							gradvz = (opp_v.z - shared_v_n_verts[threadIdx.x].z)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+
+						}
+						else {
 							gradvx = GetGradient(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 								prevpos, info.pos, nextpos, opppos,
@@ -27479,96 +27525,63 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
 								prev_v.z, shared_v_n_verts[threadIdx.x].z, next_v.z, opp_v.z
 							);
+
+							// Could switch to the 3 in one function that handles all 3. in one.
 						};
-					};
-
-#else
-					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-					{
-						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
-						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
-
-						gradvx = (opp_v.x - shared_v_n_verts[threadIdx.x].x)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-						gradvy = (opp_v.y - shared_v_n_verts[threadIdx.x].y)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-						gradvz = (opp_v.z - shared_v_n_verts[threadIdx.x].z)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-
-					} else {
-						gradvx = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.x, shared_v_n_verts[threadIdx.x].x, next_v.x, opp_v.x
-						);
-						gradvy = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.y, shared_v_n_verts[threadIdx.x].y, next_v.y, opp_v.y
-						);
-						gradvz = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.z, shared_v_n_verts[threadIdx.x].z, next_v.z, opp_v.z
-						);
-
-						// Could switch to the 3 in one function that handles all 3. in one.
-					};
-					// Simplify:
+						// Simplify:
 #endif
-					htg_diff.x = shared_v_n_verts[threadIdx.x].x - opp_v.x;
-					htg_diff.y = shared_v_n_verts[threadIdx.x].y - opp_v.y;
-					htg_diff.z = shared_v_n_verts[threadIdx.x].z - opp_v.z;
+						htg_diff.x = shared_v_n_verts[threadIdx.x].x - opp_v.x;
+						htg_diff.y = shared_v_n_verts[threadIdx.x].y - opp_v.y;
+						htg_diff.z = shared_v_n_verts[threadIdx.x].z - opp_v.z;
 
-					if (TESTNEUTVISC)
-						printf("============================\nNeutral viscosity %d tri %d ita_par %1.10E\n"
-							"v %1.9E %1.9E %1.9E  opp_v %1.9E %1.9E %1.9E\n"
-							"gradvx %1.9E %1.9E gradvy %1.9E %1.9E gradvz %1.9E %1.9E \n"
-							"ourpos %1.8E %1.8E prevpos %1.8E %1.8E opppos %1.8E %1.8E nextpos %1.8E %1.8E edge_nor %1.9E %1.9E\n"
-							,
-							iVertex, izTri[i], ita_par,
-							shared_v_n_verts[threadIdx.x].x, shared_v_n_verts[threadIdx.x].y,
-							shared_v_n_verts[threadIdx.x].z, opp_v.x, opp_v.y, opp_v.z,
-							gradvx.x, gradvx.y, gradvy.x, gradvy.y, gradvz.x, gradvz.y,
-							info.pos.x, info.pos.y, prevpos.x, prevpos.y, opppos.x, opppos.y, nextpos.x, nextpos.y,
-							edge_normal.x, edge_normal.y);
-				}
+						if (TESTNEUTVISC)
+							printf("============================\nNeutral viscosity %d tri %d ita_par %1.10E\n"
+								"v %1.9E %1.9E %1.9E  opp_v %1.9E %1.9E %1.9E\n"
+								"gradvx %1.9E %1.9E gradvy %1.9E %1.9E gradvz %1.9E %1.9E \n"
+								"ourpos %1.8E %1.8E prevpos %1.8E %1.8E opppos %1.8E %1.8E nextpos %1.8E %1.8E edge_nor %1.9E %1.9E\n"
+								,
+								iVertex, izTri[i], ita_par,
+								shared_v_n_verts[threadIdx.x].x, shared_v_n_verts[threadIdx.x].y,
+								shared_v_n_verts[threadIdx.x].z, opp_v.x, opp_v.y, opp_v.z,
+								gradvx.x, gradvx.y, gradvy.x, gradvy.y, gradvz.x, gradvz.y,
+								info.pos.x, info.pos.y, prevpos.x, prevpos.y, opppos.x, opppos.y, nextpos.x, nextpos.y,
+								edge_normal.x, edge_normal.y);
+					}
 
-				// Order of calculations may help things to go out/into scope at the right times so careful with that.
+					// Order of calculations may help things to go out/into scope at the right times so careful with that.
 
-				// we also want to get nu from somewhere. So precompute nu at the time we precompute ita_e = n Te / nu_e, ita_i = n Ti / nu_i. 
+					// we also want to get nu from somewhere. So precompute nu at the time we precompute ita_e = n Te / nu_e, ita_i = n Ti / nu_i. 
 
-				if (ita_par > 0.0)
-				{
-					// For neutral fluid viscosity does not involve dimensional transfers.
+					if (ita_par > 0.0)
+					{
+						// For neutral fluid viscosity does not involve dimensional transfers.
 
-					f64_vec3 visc_contrib;
-					visc_contrib.x = over_m_n*(ita_par*gradvx.dot(edge_normal)); // if we are looking at higher vz looking out, go up.
-					visc_contrib.y = over_m_n*(ita_par*gradvy.dot(edge_normal));
-					visc_contrib.z = over_m_n*(ita_par*gradvz.dot(edge_normal));
+						f64_vec3 visc_contrib;
+						visc_contrib.x = over_m_n*(ita_par*gradvx.dot(edge_normal)); // if we are looking at higher vz looking out, go up.
+						visc_contrib.y = over_m_n*(ita_par*gradvy.dot(edge_normal));
+						visc_contrib.z = over_m_n*(ita_par*gradvz.dot(edge_normal));
 
-					//		if (iVertex == VERTCHOSEN) {
-					//			printf("visc_contrib %1.9E %1.9E %1.9E  ita %1.10E \n",
-					//				visc_contrib.x, visc_contrib.y, visc_contrib.z, ita_par);
-					//		}
+						//		if (iVertex == VERTCHOSEN) {
+						//			printf("visc_contrib %1.9E %1.9E %1.9E  ita %1.10E \n",
+						//				visc_contrib.x, visc_contrib.y, visc_contrib.z, ita_par);
+						//		}
 
-					ownrates_visc += visc_contrib;
-					visc_htg += -THIRD*m_n*(htg_diff.dot(visc_contrib));
+						ownrates_visc += visc_contrib;
+						visc_htg += -THIRD*m_n*(htg_diff.dot(visc_contrib));
 
-					if (TESTNEUTVISC)
-						printf("htg_diff %1.9E %1.9E %1.9E visc_contrib %1.9E %1.9E %1.9E visc_htg %1.10E\n"
-							,
-							htg_diff.x, htg_diff.y, htg_diff.z, visc_contrib.x, visc_contrib.y, visc_contrib.z,
-							visc_htg
-						);
+						if (TESTNEUTVISC)
+							printf("htg_diff %1.9E %1.9E %1.9E visc_contrib %1.9E %1.9E %1.9E visc_htg %1.10E\n"
+								,
+								htg_diff.x, htg_diff.y, htg_diff.z, visc_contrib.x, visc_contrib.y, visc_contrib.z,
+								visc_htg
+							);
 
-				}
+					}
 
-				// MAR_elec -= Make3(0.5*(n0 * T0.Te + n1 * T1.Te)*over_m_e*edge_normal, 0.0);
-				// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
+					// MAR_elec -= Make3(0.5*(n0 * T0.Te + n1 * T1.Te)*over_m_e*edge_normal, 0.0);
+					// v0.vez = vie_k.vez + h_use * MAR.z / (n_use.n*AreaMinor);
+				}; // p_Select
+
 
 			}; // next i
 
@@ -27621,7 +27634,9 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 		// JUST TO GET IT TO RUN:
 		if (((info.flag == DOMAIN_TRIANGLE) || (info.flag == CROSSING_INS)) 
 			// && (info.pos.modulus() < 4.9) // if we have this then we have to have it in d/dbeta routine also.
-			&& (shared_ita_par[threadIdx.x] > 0.0)) {
+			&& (shared_ita_par[threadIdx.x] > 0.0)
+			&& (p_Select[iMinor] != 0)
+			) {
 
 			memcpy(izNeighMinor, p_izNeighMinor + iMinor * 6, sizeof(long) * 6);
 			memcpy(szPBC, p_szPBCtriminor + iMinor * 6, sizeof(char) * 6);
@@ -27630,213 +27645,253 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 #pragma unroll 
 			for (short i = 0; i < 6; i++)
 			{
-				bool bUsableSide = true;
-				{
-					// newly uncommented:
-					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-					{
-						if (shared_ita_par[threadIdx.x] < shared_ita_par[izNeighMinor[i] - StartMinor])
-						{
-							ita_par = shared_ita_par[threadIdx.x];
-							nu = shared_nu[threadIdx.x];
-						}
-						else {
-							ita_par = shared_ita_par[izNeighMinor[i] - StartMinor];
-							nu = shared_nu[izNeighMinor[i] - StartMinor];
-						};
+				if (p_Select[izNeighMinor[i]] != 0) {
 
-						if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
-					}
-					else {
-						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+					bool bUsableSide = true;
+					{
+						// newly uncommented:
+						if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 						{
-							if (shared_ita_par[threadIdx.x] < shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL])
+							if (shared_ita_par[threadIdx.x] < shared_ita_par[izNeighMinor[i] - StartMinor])
 							{
 								ita_par = shared_ita_par[threadIdx.x];
 								nu = shared_nu[threadIdx.x];
 							}
 							else {
-								ita_par = shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
-								nu = shared_nu_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+								ita_par = shared_ita_par[izNeighMinor[i] - StartMinor];
+								nu = shared_nu[izNeighMinor[i] - StartMinor];
 							};
-							if (shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL] == 0.0) bUsableSide = false;
+
+							if (shared_ita_par[izNeighMinor[i] - StartMinor] == 0.0) bUsableSide = false;
 						}
 						else {
-							f64 ita_par_opp = p_ita_neut_minor[izNeighMinor[i]];
-							f64 nu_theirs = p_nu_neut_minor[izNeighMinor[i]];
-							if (shared_ita_par[threadIdx.x] < ita_par_opp) {
-								ita_par = shared_ita_par[threadIdx.x];
-								nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
+							if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+								(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+							{
+								if (shared_ita_par[threadIdx.x] < shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL])
+								{
+									ita_par = shared_ita_par[threadIdx.x];
+									nu = shared_nu[threadIdx.x];
+								}
+								else {
+									ita_par = shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+									nu = shared_nu_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL];
+								};
+								if (shared_ita_par_verts[izNeighMinor[i] - StartMajor - BEGINNING_OF_CENTRAL] == 0.0) bUsableSide = false;
 							}
 							else {
-								ita_par = ita_par_opp;
-								nu = nu_theirs;
-							}
-							if (ita_par_opp == 0.0) bUsableSide = false;
-						};
+								f64 ita_par_opp = p_ita_neut_minor[izNeighMinor[i]];
+								f64 nu_theirs = p_nu_neut_minor[izNeighMinor[i]];
+								if (shared_ita_par[threadIdx.x] < ita_par_opp) {
+									ita_par = shared_ita_par[threadIdx.x];
+									nu = shared_nu[threadIdx.x]; // why do I deliberately use the corresponding nu? nvm
+								}
+								else {
+									ita_par = ita_par_opp;
+									nu = nu_theirs;
+								}
+								if (ita_par_opp == 0.0) bUsableSide = false;
+							};
+						}
 					}
-				}
-				// basically bUsableSide here just depends on whether min(ita, ita_opp) == 0.
+					// basically bUsableSide here just depends on whether min(ita, ita_opp) == 0.
 
-				bool bLongi = false;
+					bool bLongi = false;
 #ifdef INS_INS_NONE
-				// Get rid of ins-ins triangle traffic:
-				if (info.flag == CROSSING_INS) {
-					char flag = p_info_minor[izNeighMinor[i]].flag;
-					if (flag == CROSSING_INS)
-						bUsableSide = 0;
-				}
-		//		if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-		//			bLongi = true;
-				// have to put it below
+					// Get rid of ins-ins triangle traffic:
+					if (info.flag == CROSSING_INS) {
+						char flag = p_info_minor[izNeighMinor[i]].flag;
+						if (flag == CROSSING_INS)
+							bUsableSide = 0;
+					}
+					//		if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+					//			bLongi = true;
+							// have to put it below
 #else
-				if (info.flag == CROSSING_INS) {
-					char flag = p_info_minor[izNeighMinor[i]].flag;
-					if (flag == CROSSING_INS)
-						bLongi = true;
-				}
+					if (info.flag == CROSSING_INS) {
+						char flag = p_info_minor[izNeighMinor[i]].flag;
+						if (flag == CROSSING_INS)
+							bLongi = true;
+					}
 #endif
 
 
-				f64_vec2 gradvx, gradvy, gradvz;
-				f64_vec2 edge_normal;
-				f64_vec3 htg_diff;
+					f64_vec2 gradvx, gradvy, gradvz;
+					f64_vec2 edge_normal;
+					f64_vec3 htg_diff;
 
-				if (bUsableSide)
-				{
-					short inext = i + 1; if (inext > 5) inext = 0;
-					short iprev = i - 1; if (iprev < 0) iprev = 5;
-					f64_vec3 prev_v, opp_v, next_v;
-					f64_vec2 prevpos, nextpos, opppos;
-
-					if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
+					if (bUsableSide)
 					{
-						memcpy(&prev_v, &(shared_v_n[izNeighMinor[iprev] - StartMinor]), sizeof(f64_vec3));
-						prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
+						short inext = i + 1; if (inext > 5) inext = 0;
+						short iprev = i - 1; if (iprev < 0) iprev = 5;
+						f64_vec3 prev_v, opp_v, next_v;
+						f64_vec2 prevpos, nextpos, opppos;
+
+						if ((izNeighMinor[iprev] >= StartMinor) && (izNeighMinor[iprev] < EndMinor))
 						{
-							memcpy(&prev_v, &(shared_v_n_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
-							prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
+							memcpy(&prev_v, &(shared_v_n[izNeighMinor[iprev] - StartMinor]), sizeof(f64_vec3));
+							prevpos = shared_pos[izNeighMinor[iprev] - StartMinor];
 						}
 						else {
-							prevpos = p_info_minor[izNeighMinor[iprev]].pos;
-							memcpy(&prev_v, &(p_v_n_minor[izNeighMinor[iprev]]), sizeof(f64_vec3));
+							if ((izNeighMinor[iprev] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+								(izNeighMinor[iprev] < EndMajor + BEGINNING_OF_CENTRAL))
+							{
+								memcpy(&prev_v, &(shared_v_n_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
+								prevpos = shared_pos_verts[izNeighMinor[iprev] - BEGINNING_OF_CENTRAL - StartMajor];
+							}
+							else {
+								prevpos = p_info_minor[izNeighMinor[iprev]].pos;
+								memcpy(&prev_v, &(p_v_n_minor[izNeighMinor[iprev]]), sizeof(f64_vec3));
 
+							};
 						};
-					};
-					if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
-						prevpos = Clockwise_d*prevpos;
-						RotateClockwise(prev_v);
-					};
-					if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
-						prevpos = Anticlockwise_d*prevpos;
-						RotateAnticlockwise(prev_v);
-					};
+						if (szPBC[iprev] == ROTATE_ME_CLOCKWISE) {
+							prevpos = Clockwise_d*prevpos;
+							RotateClockwise(prev_v);
+						};
+						if (szPBC[iprev] == ROTATE_ME_ANTICLOCKWISE) {
+							prevpos = Anticlockwise_d*prevpos;
+							RotateAnticlockwise(prev_v);
+						};
 
-					if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
-					{
-						memcpy(&opp_v, &(shared_v_n[izNeighMinor[i] - StartMinor]), sizeof(f64_vec3));
-						opppos = shared_pos[izNeighMinor[i] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+						if ((izNeighMinor[i] >= StartMinor) && (izNeighMinor[i] < EndMinor))
 						{
-							memcpy(&opp_v, &(shared_v_n_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
-							opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
+							memcpy(&opp_v, &(shared_v_n[izNeighMinor[i] - StartMinor]), sizeof(f64_vec3));
+							opppos = shared_pos[izNeighMinor[i] - StartMinor];
 						}
 						else {
-							opppos = p_info_minor[izNeighMinor[i]].pos;
-							memcpy(&opp_v, &(p_v_n_minor[izNeighMinor[i]]), sizeof(f64_vec3));
+							if ((izNeighMinor[i] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+								(izNeighMinor[i] < EndMajor + BEGINNING_OF_CENTRAL))
+							{
+								memcpy(&opp_v, &(shared_v_n_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
+								opppos = shared_pos_verts[izNeighMinor[i] - BEGINNING_OF_CENTRAL - StartMajor];
+							}
+							else {
+								opppos = p_info_minor[izNeighMinor[i]].pos;
+								memcpy(&opp_v, &(p_v_n_minor[izNeighMinor[i]]), sizeof(f64_vec3));
+							};
 						};
-					};
-					if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
-						opppos = Clockwise_d*opppos;
-						RotateClockwise(opp_v);
-					}
-					if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
-						opppos = Anticlockwise_d*opppos;
-						RotateAnticlockwise(opp_v);
-					}
+						if (szPBC[i] == ROTATE_ME_CLOCKWISE) {
+							opppos = Clockwise_d*opppos;
+							RotateClockwise(opp_v);
+						}
+						if (szPBC[i] == ROTATE_ME_ANTICLOCKWISE) {
+							opppos = Anticlockwise_d*opppos;
+							RotateAnticlockwise(opp_v);
+						}
 
-					if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
-					{
-						memcpy(&next_v, &(shared_v_n[izNeighMinor[inext] - StartMinor]), sizeof(f64_vec3));
-						nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
-					}
-					else {
-						if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
-							(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+						if ((izNeighMinor[inext] >= StartMinor) && (izNeighMinor[inext] < EndMinor))
 						{
-							memcpy(&next_v, &(shared_v_n_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
-							nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+							memcpy(&next_v, &(shared_v_n[izNeighMinor[inext] - StartMinor]), sizeof(f64_vec3));
+							nextpos = shared_pos[izNeighMinor[inext] - StartMinor];
 						}
 						else {
-							nextpos = p_info_minor[izNeighMinor[inext]].pos;
-							memcpy(&next_v, &(p_v_n_minor[izNeighMinor[inext]]), sizeof(f64_vec3));
+							if ((izNeighMinor[inext] >= StartMajor + BEGINNING_OF_CENTRAL) &&
+								(izNeighMinor[inext] < EndMajor + BEGINNING_OF_CENTRAL))
+							{
+								memcpy(&next_v, &(shared_v_n_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor]), sizeof(f64_vec3));
+								nextpos = shared_pos_verts[izNeighMinor[inext] - BEGINNING_OF_CENTRAL - StartMajor];
+							}
+							else {
+								nextpos = p_info_minor[izNeighMinor[inext]].pos;
+								memcpy(&next_v, &(p_v_n_minor[izNeighMinor[inext]]), sizeof(f64_vec3));
+							};
 						};
-					};
-					if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
-						nextpos = Clockwise_d*nextpos;
-						RotateClockwise(next_v);
-					};
-					if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
-						nextpos = Anticlockwise_d*nextpos;
-						RotateAnticlockwise(next_v);
-					};
+						if (szPBC[inext] == ROTATE_ME_CLOCKWISE) {
+							nextpos = Clockwise_d*nextpos;
+							RotateClockwise(next_v);
+						};
+						if (szPBC[inext] == ROTATE_ME_ANTICLOCKWISE) {
+							nextpos = Anticlockwise_d*nextpos;
+							RotateAnticlockwise(next_v);
+						};
 
-					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-						bLongi = true;
+						if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+							bLongi = true;
 #ifdef INS_INS_3POINT
-					if (TestDomainPos(prevpos) == false) {
-
-						gradvx = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n[threadIdx.x].x, next_v.x, opp_v.x
-						);
-						gradvy = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n[threadIdx.x].y, next_v.y, opp_v.y
-						);
-						gradvz = GetGradient_3Point(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							shared_v_n[threadIdx.x].z, next_v.z, opp_v.z
-						);
-
-					} else {
-						if (TestDomainPos(nextpos) == false) {
+						if (TestDomainPos(prevpos) == false) {
 
 							gradvx = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.x, shared_v_n[threadIdx.x].x, opp_v.x
+								shared_v_n[threadIdx.x].x, next_v.x, opp_v.x
 							);
 							gradvy = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.y, shared_v_n[threadIdx.x].y, opp_v.y
+								shared_v_n[threadIdx.x].y, next_v.y, opp_v.y
 							);
 							gradvz = GetGradient_3Point(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-								prevpos, info.pos, opppos,
+								info.pos, nextpos, opppos,
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-								prev_v.z, shared_v_n[threadIdx.x].z, opp_v.z
+								shared_v_n[threadIdx.x].z, next_v.z, opp_v.z
 							);
 
-						} else {
+						}
+						else {
+							if (TestDomainPos(nextpos) == false) {
 
+								gradvx = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.x, shared_v_n[threadIdx.x].x, opp_v.x
+								);
+								gradvy = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.y, shared_v_n[threadIdx.x].y, opp_v.y
+								);
+								gradvz = GetGradient_3Point(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.z, shared_v_n[threadIdx.x].z, opp_v.z
+								);
+
+							}
+							else {
+
+								gradvx = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.x, shared_v_n[threadIdx.x].x, next_v.x, opp_v.x
+								);
+								gradvy = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.y, shared_v_n[threadIdx.x].y, next_v.y, opp_v.y
+								);
+								gradvz = GetGradient(
+									//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
+									prevpos, info.pos, nextpos, opppos,
+									//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
+									prev_v.z, shared_v_n[threadIdx.x].z, next_v.z, opp_v.z
+								);
+
+							};
+						};
+#else
+						if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
+						{
+							// One of the sides is dipped under the insulator -- set transverse deriv to 0.
+							// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
+
+							gradvx = (opp_v.x - shared_v_n[threadIdx.x].x)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+							gradvy = (opp_v.y - shared_v_n[threadIdx.x].y)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+							gradvz = (opp_v.z - shared_v_n[threadIdx.x].z)*(opppos - info.pos) /
+								(opppos - info.pos).dot(opppos - info.pos);
+
+						}
+						else {
 							gradvx = GetGradient(
 								//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
 								prevpos, info.pos, nextpos, opppos,
@@ -27855,136 +27910,103 @@ __global__ void kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric(
 								//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
 								prev_v.z, shared_v_n[threadIdx.x].z, next_v.z, opp_v.z
 							);
-
-						};
-					};
-#else
-					if ((TestDomainPos(prevpos) == false) || (TestDomainPos(nextpos) == false))
-					{
-						// One of the sides is dipped under the insulator -- set transverse deriv to 0.
-						// Bear in mind we are looking from a vertex into a tri, it can be ins tri.
-
-						gradvx = (opp_v.x - shared_v_n[threadIdx.x].x)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-						gradvy = (opp_v.y - shared_v_n[threadIdx.x].y)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-						gradvz = (opp_v.z - shared_v_n[threadIdx.x].z)*(opppos - info.pos) /
-							(opppos - info.pos).dot(opppos - info.pos);
-
-					}
-					else {
-						gradvx = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.x, shared_v_n[threadIdx.x].x, next_v.x, opp_v.x
-						);
-						gradvy = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.y, shared_v_n[threadIdx.x].y, next_v.y, opp_v.y
-						);
-						gradvz = GetGradient(
-							//f64_vec2 prevpos, f64_vec2 ourpos, f64_vec2 nextpos, f64_vec2 opppos,
-							prevpos, info.pos, nextpos, opppos,
-							//f64 prev_v, f64 our_v, f64 next_v, f64 opp_v
-							prev_v.z, shared_v_n[threadIdx.x].z, next_v.z, opp_v.z
-						);
-					}
+						}
 #endif
 #ifdef INS_INS_NONE
-					if (info.flag == CROSSING_INS) {
-						char flag = p_info_minor[izNeighMinor[i]].flag;
-						if (flag == CROSSING_INS) {
-							// just set it to 0.
-							bUsableSide = false;
-							gradvz.x = 0.0;
-							gradvz.y = 0.0;
-							gradvx.x = 0.0;
-							gradvx.y = 0.0;
-							gradvy.x = 0.0;
-							gradvy.y = 0.0;
-						};
-					};
-#endif
-
-					htg_diff = shared_v_n[threadIdx.x] - opp_v;
-
-					if (TESTNEUTVISC2) {
-						printf("%d i %d prev_v %1.10E our_v %1.10E opp_v %1.10E next_v %1.10E\n",
-							iMinor, i, prev_v.y, shared_v_n[threadIdx.x].y, opp_v.y, next_v.y);
-					};
-
-					edge_normal.x = THIRD * (nextpos.y - prevpos.y);
-					edge_normal.y = THIRD * (prevpos.x - nextpos.x);  // need to define so as to create unit vectors
-
-
-					//					if (iMinor == CHOSEN) printf("============================\nNeutral viscosity %d %d\n"
-					//							"v.x %1.9E  opp_v.x %1.9E prev_v.x %1.9E next_v.x %1.9E\n"
-					//							"ourpos %1.9E %1.9E \n"
-					//							"prevpos %1.9E %1.9E \n"
-					//							"opppos %1.9E %1.9E \n"
-					//							"nextpos %1.9E %1.9E \n"
-					//							"gradvx %1.9E %1.9E gradvy %1.9E %1.9E edge_nor %1.9E %1.9E\n",
-					//							iMinor, izNeighMinor[i],
-					//							shared_v_n[threadIdx.x].x, opp_v.x, prev_v.x, next_v.x,
-					//							info.pos.x, info.pos.y, prevpos.x, prevpos.y, opppos.x, opppos.y, nextpos.x, nextpos.y,
-					//							gradvx.x, gradvx.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y);
-					//
-
-					if (bLongi) {
-						// move any edge_normal endpoints that are below the insulator,
-						// until they are above the insulator.
-						edge_normal = ReconstructEdgeNormal(
-							prevpos, info.pos, nextpos, opppos
-						);
-					};
-
-				};
-				if (bUsableSide) {
-
-					f64_vec3 visc_contrib;
-					visc_contrib.x = over_m_n*ita_par*gradvx.dot(edge_normal);
-					visc_contrib.y = over_m_n*ita_par*gradvy.dot(edge_normal);
-					visc_contrib.z = over_m_n*ita_par*gradvz.dot(edge_normal);
-
-					// Set to 0 any that are pushing momentum uphill. For neutral this is unphysical.
-					//	if (visc_contrib.x*htg_diff.x > 0.0) visc_contrib.x = 0.0;
-					// Can't do it because it'll ruin backward solve.
-
-					ownrates_visc += visc_contrib;
-
-					if (TESTNEUTVISC2) {
-						printf("%d i %d contrib.y %1.10E gradvy %1.10E %1.10E edge_nml %1.9E %1.9E ita %1.8E /m_n %1.8E cumu %1.9E\n",
-							iMinor, i, visc_contrib.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y, ita_par, over_m_n, ownrates_visc.y);
-					};
-
-					if (i % 2 == 0) {
-						// vertex : heat collected by vertex
-					}
-					else {
-#ifdef COLLECT_VISC_HTG_IN_TRIANGLES
-						visc_htg += -THIRD*m_ion*(htg_diff.dot(visc_contrib));
-#else
-						f64 heat_addn = -THIRD*m_ion*(htg_diff.dot(visc_contrib));
-						if (i == 1) {
-							visc_htg0 += 0.5*heat_addn;
-							visc_htg1 += 0.5*heat_addn;
-						} else {
-							if (i == 3) {
-								visc_htg1 += 0.5*heat_addn;
-								visc_htg2 += 0.5*heat_addn;
-							} else {
-								visc_htg0 += 0.5*heat_addn;
-								visc_htg2 += 0.5*heat_addn;
+						if (info.flag == CROSSING_INS) {
+							char flag = p_info_minor[izNeighMinor[i]].flag;
+							if (flag == CROSSING_INS) {
+								// just set it to 0.
+								bUsableSide = false;
+								gradvz.x = 0.0;
+								gradvz.y = 0.0;
+								gradvx.x = 0.0;
+								gradvx.y = 0.0;
+								gradvy.x = 0.0;
+								gradvy.y = 0.0;
 							};
 						};
 #endif
+
+						htg_diff = shared_v_n[threadIdx.x] - opp_v;
+
+						if (TESTNEUTVISC2) {
+							printf("%d i %d prev_v %1.10E our_v %1.10E opp_v %1.10E next_v %1.10E\n",
+								iMinor, i, prev_v.y, shared_v_n[threadIdx.x].y, opp_v.y, next_v.y);
+						};
+
+						edge_normal.x = THIRD * (nextpos.y - prevpos.y);
+						edge_normal.y = THIRD * (prevpos.x - nextpos.x);  // need to define so as to create unit vectors
+
+
+						//					if (iMinor == CHOSEN) printf("============================\nNeutral viscosity %d %d\n"
+						//							"v.x %1.9E  opp_v.x %1.9E prev_v.x %1.9E next_v.x %1.9E\n"
+						//							"ourpos %1.9E %1.9E \n"
+						//							"prevpos %1.9E %1.9E \n"
+						//							"opppos %1.9E %1.9E \n"
+						//							"nextpos %1.9E %1.9E \n"
+						//							"gradvx %1.9E %1.9E gradvy %1.9E %1.9E edge_nor %1.9E %1.9E\n",
+						//							iMinor, izNeighMinor[i],
+						//							shared_v_n[threadIdx.x].x, opp_v.x, prev_v.x, next_v.x,
+						//							info.pos.x, info.pos.y, prevpos.x, prevpos.y, opppos.x, opppos.y, nextpos.x, nextpos.y,
+						//							gradvx.x, gradvx.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y);
+						//
+
+						if (bLongi) {
+							// move any edge_normal endpoints that are below the insulator,
+							// until they are above the insulator.
+							edge_normal = ReconstructEdgeNormal(
+								prevpos, info.pos, nextpos, opppos
+							);
+						};
+
 					};
-					
-				}; // bUsableSide
-			};
+					if (bUsableSide) {
+
+						f64_vec3 visc_contrib;
+						visc_contrib.x = over_m_n*ita_par*gradvx.dot(edge_normal);
+						visc_contrib.y = over_m_n*ita_par*gradvy.dot(edge_normal);
+						visc_contrib.z = over_m_n*ita_par*gradvz.dot(edge_normal);
+
+						// Set to 0 any that are pushing momentum uphill. For neutral this is unphysical.
+						//	if (visc_contrib.x*htg_diff.x > 0.0) visc_contrib.x = 0.0;
+						// Can't do it because it'll ruin backward solve.
+
+						ownrates_visc += visc_contrib;
+
+						if (TESTNEUTVISC2) {
+							printf("%d i %d contrib.y %1.10E gradvy %1.10E %1.10E edge_nml %1.9E %1.9E ita %1.8E /m_n %1.8E cumu %1.9E\n",
+								iMinor, i, visc_contrib.y, gradvy.x, gradvy.y, edge_normal.x, edge_normal.y, ita_par, over_m_n, ownrates_visc.y);
+						};
+
+						if (i % 2 == 0) {
+							// vertex : heat collected by vertex
+					}
+						else {
+#ifdef COLLECT_VISC_HTG_IN_TRIANGLES
+							visc_htg += -THIRD*m_ion*(htg_diff.dot(visc_contrib));
+#else
+							f64 heat_addn = -THIRD*m_ion*(htg_diff.dot(visc_contrib));
+							if (i == 1) {
+								visc_htg0 += 0.5*heat_addn;
+								visc_htg1 += 0.5*heat_addn;
+							}
+							else {
+								if (i == 3) {
+									visc_htg1 += 0.5*heat_addn;
+									visc_htg2 += 0.5*heat_addn;
+								}
+								else {
+									visc_htg0 += 0.5*heat_addn;
+									visc_htg2 += 0.5*heat_addn;
+								};
+							};
+#endif
+						};
+
+					}; // bUsableSide
+				}; // p_Select
+			}; // next i
 
 			f64_vec3 ownrates;
 			memcpy(&ownrates, &(p_MAR_neut[iMinor]), sizeof(f64_vec3));

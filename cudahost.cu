@@ -68,7 +68,7 @@ extern TriMesh X4;
 #define p_sqrtDN_Ti p_NTi
 #define p_sqrtDN_Te p_NTe
 
-#define DEFAULTSUPPRESSVERBOSITY false
+#define DEFAULTSUPPRESSVERBOSITY true
 
 
 bool inline within(f64 l, f64 a, f64 b)
@@ -9319,7 +9319,7 @@ void RunBackwardJLSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst
 	GlobalSuppressSuccessVerbosity = DEFAULTSUPPRESSVERBOSITY;
 }
 
-
+/*
 void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f64 const hsub,
 	cuSyst * pX_use
 	//f64_vec3 * p_initial_regressor
@@ -9370,7 +9370,8 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 		p_temp5,
 		p_MAR_neut2, // just accumulates
 		NT_addition_rates_d_temp,
-		NT_addition_tri_d);
+		NT_addition_tri_d,
+		p_SelectflagNeut);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 	cudaMemset(p_epsilon_x, 0, sizeof(f64)*NMINOR);
 	cudaMemset(p_epsilon_y, 0, sizeof(f64)*NMINOR);
@@ -9512,7 +9513,8 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 				p_temp5,
 				p_MAR_neut2, // just accumulates
 				NT_addition_rates_d_temp,
-				NT_addition_tri_d);
+				NT_addition_tri_d,
+				p_SelectflagNeut);
 			Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 			kernelCreateEpsilon_NeutralVisc << <numTilesMinor, threadsPerTileMinor >> > (
 				hsub,
@@ -9636,34 +9638,34 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 			printf("\n");
 
 			CallMAC(cudaMemcpyToSymbol(beta_n_c, beta, REGRESSORS * sizeof(f64)));
-			
-			/*
-#ifdef LAPACKE
-			lapack_int ipiv[REGRESSORS];
-			lapack_int Nrows = REGRESSORS,
-				Ncols = REGRESSORS,  // lda
-				Nrhscols = 1, // ldb
-				Nrhsrows = REGRESSORS, info;
+//			
+//			
+//#ifdef LAPACKE
+//			lapack_int ipiv[REGRESSORS];
+//			lapack_int Nrows = REGRESSORS,
+//				Ncols = REGRESSORS,  // lda
+//				Nrhscols = 1, // ldb
+//				Nrhsrows = REGRESSORS, info;
+//
+//			//	printf("LAPACKE_dgesv Results\n");
+//			// Solve the equations A*X = B 
+//			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, 
+//				Nrows, 1, sum_product_matrix, Ncols, ipiv, eps_deps, Nrhscols);
+//			// Check for the exact singularity :
+//			
+//			if (info > 0) {
+//				//	printf("The diagonal element of the triangular factor of A,\n");
+//				//	printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
+//				printf("the solution could not be computed Neutral visc.\n");
+//				printf("press c\n");
+//				while (getch() != 'c');
+//			} else {
+//				if (info == 0) {
+//					memcpy(beta, eps_deps, REGRESSORS * sizeof(f64)); // that's where LAPACKE saves the result apparently.
+//				};
+//			}
+//#endif
 
-			//	printf("LAPACKE_dgesv Results\n");
-			// Solve the equations A*X = B 
-			info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, 
-				Nrows, 1, sum_product_matrix, Ncols, ipiv, eps_deps, Nrhscols);
-			// Check for the exact singularity :
-			
-			if (info > 0) {
-				//	printf("The diagonal element of the triangular factor of A,\n");
-				//	printf("U(%i,%i) is zero, so that A is singular;\n", info, info);
-				printf("the solution could not be computed Neutral visc.\n");
-				printf("press c\n");
-				while (getch() != 'c');
-			} else {
-				if (info == 0) {
-					memcpy(beta, eps_deps, REGRESSORS * sizeof(f64)); // that's where LAPACKE saves the result apparently.
-				};
-			}
-#endif
-*/
 
 			// Now beta[8] is the set of coefficients for x
 			// Move to the new value: add lc of regressors to proposal vector.
@@ -9693,7 +9695,8 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 			p_temp5,
 			p_MAR_neut2, // just accumulates
 			NT_addition_rates_d_temp,
-			NT_addition_tri_d);
+			NT_addition_tri_d,
+			p_SelectflagNeut);
 		Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 		cudaMemset(p_epsilon3, 0, sizeof(f64_vec3)*NMINOR);
 		CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor));
@@ -9755,17 +9758,7 @@ void RunBackwardR8LSForNeutralViscosity(f64_vec3 * p_v_n_k, f64_vec3 * p_v_n, f6
 		Rsquared.x *= 100.0; Rsquared.y *= 100.0; Rsquared.z *= 100.0;
 		printf("L2eps xyz %1.8E %1.8E %1.8E R^2 %2.3f%% %2.3f%% %2.3f%% bCont: %d\n",
 			L2eps.x, L2eps.y, L2eps.z, Rsquared.x, Rsquared.y, Rsquared.z, (bContinue?1:0));
-		/*
-
-		1. We are getting that it can get worse. But I do not see MK 1 Eyeball what is wrong with the above code, so we need to see whether change in eps is as predicted.
-		Is matrix solve same as on spreadsheet?
-		 
-		It could be we are operating below precision. 1e-9 on 1e+5 ? Yep sounds like it.
-		What is convergence criterion?
-			...
-
-*/
-
+	
 
 		// Just to be clear, what do we mean by 'move direction', we're clear move up to here is proposal-Tk
 		// hA is the direction from x_k+1 .. so why are we not just asking for epsilon > 0
@@ -9791,7 +9784,7 @@ labelNeutralBudgie:
 	Call(cudaThreadSynchronize(), "cudaTS subtract vector 3");
 	
 
-}
+}*/
 
 void RunBackwardR8LSForViscosity(v4 * p_vie_k, v4 * p_vie, f64 const hsub, cuSyst * pX_use)
 // BE SURE ABOUT PARAMETER ORDER -- CHECK IT CHECK IT
@@ -11262,7 +11255,9 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 		p_nu_n,
 		p_MAR_neut2, // just accumulates
 		NT_addition_rates_d_2,
-		NT_addition_tri_d2);
+		NT_addition_tri_d2,
+		p_SelectflagNeut
+		);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 	cudaMemset(p_epsilon3, 0, sizeof(f64_vec3)*NMINOR);
@@ -11330,37 +11325,37 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 	while (bContinue)
 	{
 
-		// . Get Jacobi inverse:
-		// ======================
-		CalculateCoeffself << <numTriTiles, threadsPerTileMinor >> > (
-			pX_use->p_info,
-			pX_use->p_vie,
-			p_v_n,
-			pX_use->p_izTri_vert,
-			pX_use->p_szPBCtri_vert,
-			pX_use->p_izNeigh_TriMinor,
-			pX_use->p_szPBC_triminor,
-			p_ita_n,   // nT / nu ready to look up
-			p_nu_n,   // nT / nu ready to look up
-			pX_use->p_B,
-			p__matrix_xy_i, // matrix ... 
-			p__coeffself_iz, // we are being naughty and using the memory from ion
-			p__xzyzzxzy_i, // xz yz zx zy == 0
-			0,
-			m_n_,
-			1.0 / m_n_
-			);
-		Call(cudaThreadSynchronize(), "cudaTS CalculateCoeffself ion");
-		 
-		kernelCreateNeutralInverseCoeffself << <numTilesMinor, threadsPerTileMinor >> > (
-			hsub,
-			pX_use->p_info,
-			pX_use->p_n_minor,
-			pX_use->p_AreaMinor,
-			p__coeffself_iz,
-			p__invcoeffself
-			);
-		Call(cudaThreadSynchronize(), "cudaTS CreateNeutralInverseCoeffself");
+		//// . Get Jacobi inverse:
+		//// ======================
+		//CalculateCoeffself << <numTriTiles, threadsPerTileMinor >> > (
+		//	pX_use->p_info,
+		//	pX_use->p_vie,
+		//	p_v_n,
+		//	pX_use->p_izTri_vert,
+		//	pX_use->p_szPBCtri_vert,
+		//	pX_use->p_izNeigh_TriMinor,
+		//	pX_use->p_szPBC_triminor,
+		//	p_ita_n,   // nT / nu ready to look up
+		//	p_nu_n,   // nT / nu ready to look up
+		//	pX_use->p_B,
+		//	p__matrix_xy_i, // matrix ... 
+		//	p__coeffself_iz, // we are being naughty and using the memory from ion
+		//	p__xzyzzxzy_i, // xz yz zx zy == 0
+		//	0,
+		//	m_n_,
+		//	1.0 / m_n_
+		//	);
+		//Call(cudaThreadSynchronize(), "cudaTS CalculateCoeffself neut");
+		// 
+		//kernelCreateNeutralInverseCoeffself << <numTilesMinor, threadsPerTileMinor >> > (
+		//	hsub,
+		//	pX_use->p_info,
+		//	pX_use->p_n_minor,
+		//	pX_use->p_AreaMinor,
+		//	p__coeffself_iz,
+		//	p__invcoeffself
+		//	);
+		//Call(cudaThreadSynchronize(), "cudaTS CreateNeutralInverseCoeffself");
 
 
 		// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -11442,8 +11437,7 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 
 		//   .  We are seeing occasionally an increase in L2epsz : predictions how far out ?
 		// It would take an investigation to see if that is caused by just the nonlinearity.
-
-
+		
 
 		// %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -11745,7 +11739,8 @@ void RunBackward8LSForNeutralViscosity_Geometric(f64_vec3 * p_v_n_k, f64_vec3 * 
 			p_nu_n,
 			p_MAR_neut2, // just accumulates
 			NT_addition_rates_d_2,
-			NT_addition_tri_d2);
+			NT_addition_tri_d2,
+			p_SelectflagNeut);
 		Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 		cudaMemset(p_epsilon3, 0, sizeof(f64_vec3)*NMINOR);
@@ -15406,6 +15401,10 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 
 	// Let 3 = from forward move, 2= backward
 
+	Set << <numTilesMinor, threadsPerTileMinor >> > (p_Selectflag);
+	Set << <numTilesMinor, threadsPerTileMinor >> > (p_SelectflagNeut);
+	Call(cudaThreadSynchronize(), "cudaTS Set ");
+
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
 		this->p_info,
 		this->p_vie,
@@ -15417,7 +15416,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		this->p_B,
 		p_MAR_ion3, // accumulates
 		NT_addition_rates_d_3, NT_addition_tri_d3,
-		1, m_ion_, 1.0 / m_ion_);
+		1, m_ion_, 1.0 / m_ion_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -15431,7 +15431,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		this->p_B,
 		p_MAR_elec3, // accumulates
 		NT_addition_rates_d_3, NT_addition_tri_d3,
-		2, m_e_, 1.0 / m_e_);
+		2, m_e_, 1.0 / m_e_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 
 	NTrates NTratestemp;
@@ -15467,7 +15468,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_nu_n,
 		p_MAR_neut3, 
 		NT_addition_rates_d_3,
-		NT_addition_tri_d3);
+		NT_addition_tri_d3,
+		p_SelectflagNeut);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 	// These are the forward flows and heatings which we need to save, in the forward region.
@@ -15504,7 +15506,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		this->p_B,
 		p_MAR_ion2, // accumulates
 		NT_addition_rates_d_2, NT_addition_tri_d2, // throwaway
-		1, m_ion_, 1.0 / m_ion_);
+		1, m_ion_, 1.0 / m_ion_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -15516,7 +15519,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		this->p_B,
 		p_MAR_elec2, // accumulates
 		NT_addition_rates_d_2, NT_addition_tri_d2,
-		2, m_e_, 1.0 / m_e_);
+		2, m_e_, 1.0 / m_e_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 
 	kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric << <numTriTiles, threadsPerTileMinor >> > (
@@ -15526,7 +15530,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_ita_n,  p_nu_n,
 		p_MAR_neut2, // just accumulates
 		NT_addition_rates_d_2,
-		NT_addition_tri_d2);
+		NT_addition_tri_d2,
+		p_SelectflagNeut);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 
@@ -16117,8 +16122,7 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	// --------           DIAGNOSTIC GRAPHS            --------
 	// --------------------------------------------------------
 
-	if (DEFAULTSUPPRESSVERBOSITY == false);
-	
+	if (DEFAULTSUPPRESSVERBOSITY == false)	
 	{
 		char buffer[1024];
 		printf("graph time ii\n");
@@ -17582,6 +17586,11 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 	cudaMemset(NT_addition_tri_d3, 0, sizeof(NTrates)*NUMVERTICES * 6);
 	cudaMemset(NT_addition_rates_d_3, 0, sizeof(NTrates)*NUMVERTICES);
 	
+
+	Set << <numTilesMinor, threadsPerTileMinor >> > (p_Selectflag);
+	Set << <numTilesMinor, threadsPerTileMinor >> > (p_SelectflagNeut);
+	Call(cudaThreadSynchronize(), "cudaTS Set ");
+
 	// Here we are doing the RK2 step so we use pX_half->v
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -17595,7 +17604,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		pX_half->p_B,
 		p_MAR_ion3, // accumulates
 		NT_addition_rates_d_3, NT_addition_tri_d3,
-		1, m_ion_, 1.0 / m_ion_);
+		1, m_ion_, 1.0 / m_ion_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -17609,7 +17619,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		pX_half->p_B,
 		p_MAR_elec3, // accumulates
 		NT_addition_rates_d_3, NT_addition_tri_d3,
-		2, m_e_, 1.0 / m_e_);
+		2, m_e_, 1.0 / m_e_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 	
 	kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric << <numTriTiles, threadsPerTileMinor >> > (
@@ -17620,7 +17631,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_nu_n,
 		p_MAR_neut3, // just accumulates
 		NT_addition_rates_d_3,
-		NT_addition_tri_d3);
+		NT_addition_tri_d3,
+		p_SelectflagNeut);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 	// These are the forward flows and heatings which we need to save, in the forward region.
@@ -17659,7 +17671,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		pX_half->p_B, 
 		p_MAR_ion2, // accumulates
 		NT_addition_rates_d_2, NT_addition_tri_d2,
-		1, m_ion_, 1.0 / m_ion_);
+		1, m_ion_, 1.0 / m_ion_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -17672,7 +17685,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		pX_half->p_B,
 		p_MAR_elec2, // accumulates
 		NT_addition_rates_d_2, NT_addition_tri_d2,
-		2, m_e_, 1.0 / m_e_);
+		2, m_e_, 1.0 / m_e_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 
 	kernelCreate_neutral_viscous_contrib_to_MAR_and_NT_Geometric << <numTriTiles, threadsPerTileMinor >> > (
@@ -17682,7 +17696,8 @@ void cuSyst::PerformCUDA_Advance_noadvect(//const
 		p_ita_n, p_nu_n,
 		p_MAR_neut2, // just accumulates
 		NT_addition_rates_d_2,
-		NT_addition_tri_d2);
+		NT_addition_tri_d2,
+		p_SelectflagNeut);
 	Call(cudaThreadSynchronize(), "cudaTS visccontrib neut");
 
 	// &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -19393,8 +19408,8 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			p_ROCMAR1,
 			0,
 			m_n_,
-			1.0 / m_n_
-			);
+			1.0 / m_n_,
+			p_SelectflagNeut);
 		Call(cudaThreadSynchronize(), "cudaTS dbydbeta regr1 xy_n");
 	};
 	if (iUse_z) {
@@ -19413,8 +19428,8 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			p_nu_n, //f64 * __restrict__ p_nu_ion_minor,   // nT / nu ready to look up
 			pX_use->p_B,
 
-			p_ROCMAR1, 0, m_n_, 1.0 / m_n_
-			);
+			p_ROCMAR1, 0, m_n_, 1.0 / m_n_,
+			p_SelectflagNeut);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 neutz");
 	};
 		 
@@ -19428,7 +19443,8 @@ void inline SubroutineComputeDbyDbetaNeutral(
 			pX_use->p_n_minor,
 			pX_use->p_AreaMinor,
 			p_d_epsxy_by_d_beta_i + i*NMINOR,
-			p_d_eps_iz_by_d_beta_i + i*NMINOR
+			p_d_eps_iz_by_d_beta_i + i*NMINOR,
+			p_SelectflagNeut
 			);
 	Call(cudaThreadSynchronize(), "cudaTS  dbydbeta ");
 
@@ -19457,8 +19473,8 @@ void inline SubroutineComputeDbyDbeta(
 			p_ita_i, p_nu_i, 
 			pX_use->p_B,
 			p_ROCMAR1,
-			1, m_ion_, 1.0 / m_ion_
-			);
+			1, m_ion_, 1.0 / m_ion_,
+			p_Selectflag);
 		Call(cudaThreadSynchronize(), "cudaTS dbydbeta regr1 xy_i");
 		//cudaMemcpy(&tempf64, &(p_ROCMAR1[CHOSEN].y), sizeof(f64), cudaMemcpyDeviceToHost);
 		//printf("\nROCMAR1[%d].y %1.14E \n\n", CHOSEN, tempf64);
@@ -19473,8 +19489,8 @@ void inline SubroutineComputeDbyDbeta(
 			pX_use->p_szPBC_triminor,
 			p_ita_e, p_nu_e, 
 			pX_use->p_B,
-			p_ROCMAR2, 2, m_e_, 1.0 / m_e_
-			);
+			p_ROCMAR2, 2, m_e_, 1.0 / m_e_,
+			p_Selectflag);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 xy_e");
 		//cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].y), sizeof(f64), cudaMemcpyDeviceToHost);
 		//printf("\nROCMAR2[%d].y %1.14E \n\n", CHOSEN, tempf64);
@@ -19492,8 +19508,8 @@ void inline SubroutineComputeDbyDbeta(
 			pX_use->p_szPBC_triminor,
 			p_ita_i, p_nu_i, 
 			pX_use->p_B,
-			p_ROCMAR1, 1, m_i_, 1.0 / m_i_
-			);
+			p_ROCMAR1, 1, m_i_, 1.0 / m_i_,
+			p_Selectflag);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 ionz");
 	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
 	//	printf("\nROCMAR2[%d].z %1.14E \n\n", CHOSEN, tempf64);
@@ -19511,8 +19527,8 @@ void inline SubroutineComputeDbyDbeta(
 			pX_use->p_szPBC_triminor,			 
 			p_ita_e, p_nu_e, 
 			pX_use->p_B,			 
-			p_ROCMAR2, 2, m_e_, 1.0 / m_e_
-			);
+			p_ROCMAR2, 2, m_e_, 1.0 / m_e_,
+			p_Selectflag);
 		Call(cudaThreadSynchronize(), "cudaTS  dbydbeta regr1 elecz");
 
 	//	cudaMemcpy(&tempf64, &(p_ROCMAR2[CHOSEN].z), sizeof(f64), cudaMemcpyDeviceToHost);
@@ -19601,7 +19617,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		pX_use->p_B,
 		p_MAR_ion2, // accumulates
 		NT_addition_rates_d_temp, NT_addition_tri_d2,
-		1, m_ion_, 1.0 / m_ion_);
+		1, m_ion_, 1.0 / m_ion_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 
 	kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
@@ -19618,9 +19635,10 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		pX_use->p_B,
 		p_MAR_elec2, // accumulates
 		NT_addition_rates_d_2, NT_addition_tri_d2,
-		2, m_e_, 1.0 / m_e_);
+		2, m_e_, 1.0 / m_e_,
+		p_Selectflag);
 	Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
-
+	  
 	// Given putative ROC and coeff on self, it is simple to calculate eps and Jacobi. So do so:
 	CallMAC(cudaMemset(p_bFailed, 0, sizeof(bool)*numTilesMinor));
 	kernelCreateEpsilon_Visc << <numTilesMinor, threadsPerTileMinor >> > (
@@ -19792,7 +19810,7 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 		printf("iMoveType %d : L2pes_ez + L2eps_iz %1.8E * 50 = %1.8E L2eps_xy %1.8E\n", iMoveType,
 			L2eps_ez + L2eps_iz, 50 * (L2eps_ez + L2eps_iz), L2eps_xy);
 
-		if ((iIteration >= 200) && (iIteration % 4 == 0))
+		if ((iIteration >= 160) && (iIteration % 4 == 0))
 			iMoveType = 4;
 		
 		// Probably the trigger should be
@@ -22106,7 +22124,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				pX_use->p_B,
 				p_MAR_ion2, // accumulates
 				NT_addition_rates_d_2, NT_addition_tri_d2,
-				1, m_ion_, 1.0 / m_ion_);
+				1, m_ion_, 1.0 / m_ion_,
+				p_Selectflag);
 			Call(cudaThreadSynchronize(), "cudaTS Create visc flux ion");
 			kernelCreate_viscous_contrib_to_MAR_and_NT_Geometric_1species << <numTriTiles, threadsPerTileMinor >> > (
 				pX_use->p_info,
@@ -22117,7 +22136,8 @@ void RunBackwardR8LSForViscosity_Geometric(v4 * p_vie_k, v4 * p_vie, f64 const h
 				pX_use->p_B,
 				p_MAR_elec2, // accumulates
 				NT_addition_rates_d_2, NT_addition_tri_d2,
-				2, m_e_, 1.0 / m_e_);
+				2, m_e_, 1.0 / m_e_,
+				p_Selectflag);
 			Call(cudaThreadSynchronize(), "cudaTS Create visc flux elec");
 
 			// Given putative ROC and coeff on self, it is simple to calculate eps and Jacobi. So do so:
