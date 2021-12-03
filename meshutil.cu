@@ -9,6 +9,7 @@
 
 // include here only:
 #include "constant.h"
+
 //#include "cppconst.h"
 
 //		This file to contain 4 types of functions:
@@ -26,6 +27,7 @@ long GlobalVerticesInRange;
 long GlobalTrianglesInfluencing;
 bool GlobalPeriodicSearch;
 extern int globaldebugswitch ;
+bool bDebugReorder = false;
 
 extern long numVerticesKey;
 
@@ -5820,11 +5822,248 @@ void TriMesh::InitialPopulate(void)
 //	};
 //}*/
 
+void TriMesh::ReorderTriAndNeighLists(Vertex * pVertex)
+{
+	int EdgeFlag;
+	Triangle * pTri, *pTriPrev;
+	long iVertex, iCaret;
+	long i, j, k;
+	Vector2 cent;
+	Vertex *pVertPrev, *relevant, *Xwhich;
+	real theta, angle[100];
+	long index[100];
+	long izTri[128], tri_len;
+	long templong[128];
+
+	// 1. Sort triangle lists anticlockwise!!!
+	// ________________________________
+
+	tri_len = pVertex->GetTriIndexArray(izTri);
+
+	if (bDebugReorder) {
+		printf("Tri list for %d flag %d before Reorder code:\n", pVertex - X, pVertex->flags);
+
+		for (i = 0; i < tri_len; i++)
+			printf("izTri[%d] %d : %d %d %d %1.10E %1.10E %1.10E %1.10E %1.10E %1.10E\n", i, izTri[i],
+				T[izTri[i]].cornerptr[0] - X,
+				T[izTri[i]].cornerptr[1] - X,
+				T[izTri[i]].cornerptr[2] - X,
+				T[izTri[i]].cornerptr[0]->pos.x,
+				T[izTri[i]].cornerptr[0]->pos.y,
+				T[izTri[i]].cornerptr[1]->pos.x,
+				T[izTri[i]].cornerptr[1]->pos.y,
+				T[izTri[i]].cornerptr[2]->pos.x,
+				T[izTri[i]].cornerptr[2]->pos.y);
+	};
+	
+	// a. The first triangle stays the same
+
+	iCaret = 0;
+	templong[iCaret] = izTri[0];
+
+	// b. Detect which other corner is more anticlockwise.
+	f64_vec2 pos1, pos2;
+	int i1, i2;
+	f64_vec2 vec1, vec2;
+
+	pTri = T + izTri[0];
+	if (pTri->cornerptr[0] == pVertex) {
+		i1 = 1; i2 = 2;
+	} else {
+		if (pTri->cornerptr[1] == pVertex) {
+			i1 = 0; i2 = 2;
+		} else {
+			i1 = 0; i2 = 1;
+		};
+	};
+	
+	// Take cross product of vectors.
+
+	// . Find and use closest image of other corners
+	pos1 = pTri->cornerptr[i1]->pos;
+	pos2 = pTri->cornerptr[i2]->pos;
+	Vector2 pos1c, pos1a, pos2c, pos2a;
+	pos1c = Clockwise*pos1; pos1a = Anticlockwise*pos1;
+	if ((pos1c - pVertex->pos).dot(pos1c - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+		// clockwise will be nearer
+		vec1 = pos1c - pVertex->pos;
+	} else {
+		if ((pos1a - pVertex->pos).dot(pos1a - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+			// anticlockwise nearest
+			vec1 = pos1a - pVertex->pos;
+		} else {
+			vec1 = pos1 - pVertex->pos;
+		};
+	};
+	pos2c = Clockwise*pos2; pos2a = Anticlockwise*pos2;		
+	if ((pos2c - pVertex->pos).dot(pos2c - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+		// clockwise will be nearer
+		vec2 = pos2c - pVertex->pos;
+	} else {
+		if ((pos2a - pVertex->pos).dot(pos2a - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+			// anticlockwise nearest
+			vec2 = pos2a - pVertex->pos;
+		} else {
+			vec2 = pos2 - pVertex->pos;
+		};
+	};
+
+	int iAnti;
+	// cross product element z
+	if (vec1.x*vec2.y - vec1.y*vec2.x > 0.0) {
+		// Let's think this through.
+		// Say our point is the origin. pos1 is at (1,0). pos2 is at (1,1). Then (1*1 - 0*1 > 0.0).
+		// So a positive value here means pos2 is anticlockwise.
+		iAnti = i2;
+	} else {
+		iAnti = i1;
+	}
+	Vertex * pCorner = pTri->cornerptr[iAnti];
+	// c. Keep seeking tri in list which possesses same other corner.
+	int iWhich;
+	do {
+		pTriPrev = pTri;
+		int found = 0; iWhich = 0;
+		for (int ii = 0; ii < tri_len; ii++) {
+			pTri = T + izTri[ii];
+			if ((pTri != pTriPrev) && (pTri->has_corner(pCorner))) {
+				found++;
+				iWhich = ii;
+			};
+		};
+		if (found == 0) {
+			printf("corner %d only found in one triangle at vertex %d. STOPPING REORDER.\n", pCorner - X, pVertex-X);
+			return;
+		} else {
+			if (found > 1) {
+				printf("corner %d found in %d triangles at %d. STOPPING REORDER.\n", pCorner - X, found + 1, pVertex-X);
+				return;
+			} else {
+				// make pTri the next one in the list
+				iCaret++;
+				templong[iCaret] = izTri[iWhich];
+				pTri = T + izTri[iWhich];
+				if ((pTri->cornerptr[0] != pCorner) && (pTri->cornerptr[0] != pVertex)) {
+					pCorner = pTri->cornerptr[0];
+				} else {
+					if ((pTri->cornerptr[1] != pCorner) && (pTri->cornerptr[1] != pVertex)) {
+						pCorner = pTri->cornerptr[1];
+					} else {
+						pCorner = pTri->cornerptr[2];
+					};
+				};
+			};
+		};
+	} while (iWhich != 0); 
+	
+	//
+	//if (tri_len >= 100)
+	//{
+	//	printf("\ncannot do it - static array not big enough\n");
+	//	getch();
+	//}
+
+	//for (i = 0; i < tri_len; i++)
+	//{
+	//	pTri = T + izTri[i];
+	//	cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+	//	theta = CalculateAngle(cent.x - pVertex->pos.x, cent.y - pVertex->pos.y);
+	//	if (bDebugReorder) printf("i %d %d theta %1.10E cent %1.10E %1.10E vertexpos %1.10E %1.10E\n", i, izTri[i], theta,
+	//		cent.x, cent.y, pVertex->pos.x, pVertex->pos.y);
+	//	// debug:
+	//	if (_isnan(theta)) {
+	//		printf("theta nan! iVertex %d i %d \n", iVertex, i);
+	//		getch();
+	//	};
+	//	j = 0;
+	//	while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
+	//	if (j < i) {
+	//		// move the rest of them forward in the list:
+	//		for (k = i; k > j; k--)
+	//		{
+	//			index[k] = index[k - 1];
+	//			angle[k] = angle[k - 1];
+	//		};
+	//	}
+	//	angle[j] = theta;
+	//	index[j] = i;
+	//};
+	//for (i = 0; i < tri_len; i++)
+	//	templong[i] = izTri[index[i]];
+
+	// And now we come to have problems.
+	pVertex->SetTriIndexArray(templong, tri_len);
+	pVertex->GetTriIndexArray(izTri);
+	//for (i = 0; i < tri_len; i++)
+	//	pVertex->izTri[i] = tempint[i];			
+
+		// Make sure the 0th triangle to be the most clockwise one if we are at edge.
+		// .. CalculateAngle should generally work, but just in case a centre can come out below 0 angle.
+	if ((pVertex->flags == CONCAVE_EDGE_VERTEX) || (pVertex->flags == CONVEX_EDGE_VERTEX))
+	{
+		// Find one with neighbour == itself
+		// Choose the last such one to be the first element
+
+		// Specification calls for:
+		// The 0th tri should be one that is not a frill itself
+		// but is as anticlockwise as it can go and not be a frill.
+
+		// Hopefully we got the correct ordering from the above.
+
+		// Find tri:
+		i = -1;
+		// 1. Move clockwise until we get to a frill
+		do {
+			i++;
+			pTri = T + izTri[i];
+		} while ((pTri->u8domain_flag != OUTER_FRILL) && (pTri->u8domain_flag != INNER_FRILL));
+
+		// 2. Carry on until we get to not a frill
+		do {
+			i++; if (i == tri_len) i = 0;
+			pTri = T + izTri[i];
+		} while ((pTri->u8domain_flag == OUTER_FRILL) || (pTri->u8domain_flag == INNER_FRILL));
+
+		// 3. Go and check what centroid will have been applied for a frill. Match GPU.
+		// We assigned it FRILL_CENTROID_OUTER_RADIUS
+	
+		// Now rotate list:
+		iCaret = i;
+		for (i = 0; i < tri_len; i++)
+			templong[i] = izTri[i];
+		for (i = 0; i < tri_len; i++)
+		{
+			izTri[i] = templong[iCaret];
+			iCaret++;
+			if (iCaret == tri_len) iCaret = 0;
+		};
+		pVertex->SetTriIndexArray(izTri, tri_len);
+	};
+
+	if (bDebugReorder) {
+		printf("Tri list for %d after Reorder code:\n", pVertex - X);
+
+		for (i = 0; i < tri_len; i++)
+			printf("izTri[%d] %d : %d %d %d\n", i, izTri[i],
+				T[izTri[i]].cornerptr[0]-X,
+				T[izTri[i]].cornerptr[1] - X, 
+				T[izTri[i]].cornerptr[2] - X);
+	};
+
+	
+	RebuildNeighbourList(pVertex);	
+}
+
+
+
 void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void) 
 {
 	// Triangle list must already be anticlockwise sorted for each vertex.
 	// ^^ Therefore do that here.
 	
+
+	// TRIANGLE CORNERS must already be sorted anticlockwise each triangle.
+
 	// We should only need to call this function once we have altered a mesh.
 		
 	printf("Start RVNOVO ... ");
@@ -5839,54 +6078,179 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	long index[100];
 	long tempint[100];
 	long izTri[128],tri_len;
+	long templong[128];
 
 	// 1. Sort triangle lists anticlockwise!!!
 	// ________________________________
-
-	memset(angle,0,sizeof(real)*100);
-	
+	 
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
-	{
+	{		
+		// Let's try replacing this with my corner-linking method and see what happens.
 		
+		// 1. Sort triangle lists anticlockwise!!!
+		// ________________________________
+
 		tri_len = pVertex->GetTriIndexArray(izTri);
-		if (tri_len >= 100)
+
+
+		if ((pVertex->flags == INNERMOST) || (pVertex->flags == OUTERMOST))
 		{
-			printf("\ncannot do it - static array not big enough\n");
-			getch();
-		}
-		
-		for (i = 0; i < tri_len; i++)
-		{
-			pTri = T+izTri[i];
 			
-			cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
-			theta = CalculateAngle(cent.x-pVertex->pos.x,cent.y-pVertex->pos.y);		
-			
-			// debug:
-			if (_isnan(theta) ) {
-				printf("theta nan! iVertex %d i %d \n",iVertex,i);
-				getch();
+			memset(angle, 0, sizeof(real) * 100);
+						
+			for (i = 0; i < tri_len; i++)
+			{
+				pTri = T+izTri[i];
+				
+				cent = pTri->GetContiguousCent_AssumingCentroidsSet(pVertex);
+				theta = CalculateAngle(cent.x-pVertex->pos.x,cent.y-pVertex->pos.y);		
+				
+				// debug:
+				if (_isnan(theta) ) {
+					printf("theta nan! iVertex %d i %d \n",iVertex,i);
+					getch();
+				};
+
+				j = 0;
+				while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
+				if (j < i) {
+					// move the rest of them forward in the list:
+					for (k = i; k > j ; k--)
+					{
+						index[k] = index[k-1];
+						angle[k] = angle[k-1];
+					};
+				}
+				angle[j] = theta;
+				index[j] = i;
+
 			};
 
-			j = 0;
-			while ((j < i) && (theta > angle[j])) j++; // if i == 1 then we can only move up to place 1, since we have 1 element already
-			if (j < i) {
-				// move the rest of them forward in the list:
-				for (k = i; k > j ; k--)
-				{
-					index[k] = index[k-1];
-					angle[k] = angle[k-1];
-				};
-			}
-			angle[j] = theta;
-			index[j] = i;
-		};
-		for (i = 0; i < tri_len; i++)
-			tempint[i] = izTri[index[i]];
 
+			for (i = 0; i < tri_len; i++)
+				templong[i] = izTri[index[i]];
+		}
+		else {
+
+			// a. The first triangle stays the same
+
+			iCaret = 0;
+			templong[iCaret] = izTri[0];
+
+			// b. Detect which other corner is more anticlockwise.
+			f64_vec2 pos1, pos2;
+			int i1, i2;
+			f64_vec2 vec1, vec2;
+
+			pTri = T + izTri[0];
+			if (pTri->cornerptr[0] == pVertex) {
+				i1 = 1; i2 = 2;
+			}
+			else {
+				if (pTri->cornerptr[1] == pVertex) {
+					i1 = 0; i2 = 2;
+				}
+				else {
+					i1 = 0; i2 = 1;
+				};
+			};
+
+			// Take cross product of vectors.
+
+			// . Find and use closest image of other corners
+			pos1 = pTri->cornerptr[i1]->pos;
+			pos2 = pTri->cornerptr[i2]->pos;
+			Vector2 pos1c, pos1a, pos2c, pos2a;
+			pos1c = Clockwise*pos1; pos1a = Anticlockwise*pos1;
+			if ((pos1c - pVertex->pos).dot(pos1c - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+				// clockwise will be nearer
+				vec1 = pos1c - pVertex->pos;
+			}
+			else {
+				if ((pos1a - pVertex->pos).dot(pos1a - pVertex->pos) < (pos1 - pVertex->pos).dot(pos1 - pVertex->pos)) {
+					// anticlockwise nearest
+					vec1 = pos1a - pVertex->pos;
+				}
+				else {
+					vec1 = pos1 - pVertex->pos;
+				};
+			};
+			pos2c = Clockwise*pos2; pos2a = Anticlockwise*pos2;
+			if ((pos2c - pVertex->pos).dot(pos2c - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+				// clockwise will be nearer
+				vec2 = pos2c - pVertex->pos;
+			}
+			else {
+				if ((pos2a - pVertex->pos).dot(pos2a - pVertex->pos) < (pos2 - pVertex->pos).dot(pos2 - pVertex->pos)) {
+					// anticlockwise nearest
+					vec2 = pos2a - pVertex->pos;
+				}
+				else {
+					vec2 = pos2 - pVertex->pos;
+				};
+			};
+
+			int iAnti;
+			// cross product element z
+			if (vec1.x*vec2.y - vec1.y*vec2.x > 0.0) {
+				// Let's think this through.
+				// Say our point is the origin. pos1 is at (1,0). pos2 is at (1,1). Then (1*1 - 0*1 > 0.0).
+				// So a positive value here means pos2 is anticlockwise.
+				iAnti = i2;
+			}
+			else {
+				iAnti = i1;
+			};
+			
+
+			Vertex * pCorner = pTri->cornerptr[iAnti];
+			// c. Keep seeking tri in list which possesses same other corner.
+			int iWhich;
+			do {
+				pTriPrev = pTri;
+				int found = 0; iWhich = 0;
+				for (int ii = 0; ii < tri_len; ii++) {
+					pTri = T + izTri[ii];
+					if ((pTri != pTriPrev) && (pTri->has_corner(pCorner))) {
+						found++;
+						iWhich = ii;
+					};
+				};
+				if (found == 0) {
+					printf("corner %d only found in one triangle at vertex %d. STOPPING REORDER.\n", pCorner - X, pVertex - X);
+					return;
+				}
+				else {
+					if (found > 1) {
+						printf("corner %d found in %d triangles at %d. STOPPING REORDER.\n", pCorner - X, found + 1, pVertex - X);
+						return;
+					}
+					else {
+						// make pTri the next one in the list
+						iCaret++;
+						templong[iCaret] = izTri[iWhich];
+						pTri = T + izTri[iWhich];
+						if ((pTri->cornerptr[0] != pCorner) && (pTri->cornerptr[0] != pVertex)) {
+							pCorner = pTri->cornerptr[0];
+						} else {
+							if ((pTri->cornerptr[1] != pCorner) && (pTri->cornerptr[1] != pVertex)) {
+								pCorner = pTri->cornerptr[1];
+							}
+							else {
+								pCorner = pTri->cornerptr[2];
+							};
+						};
+
+					};
+				};
+			} while (iWhich != 0);
+		};
+		// I guess it fails where we do not connect back -- it only works for domain vertices and away from the edge.
+
+		
 		// And now we come to have problems.
-		pVertex->SetTriIndexArray(tempint,tri_len);
+		pVertex->SetTriIndexArray(templong,tri_len);
 		pVertex->GetTriIndexArray(izTri);
 		//for (i = 0; i < tri_len; i++)
 		//	pVertex->izTri[i] = tempint[i];			
@@ -5973,153 +6337,167 @@ void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void)
 	pVertex = X;
 	for (iVertex = 0; iVertex < numVertices; iVertex++)
 	{		
-		// Decide for triangle 0 which is the most clockwise other vertex
-		pVertex->ClearNeighs(); 
-		tri_len = pVertex->GetTriIndexArray(izTri);
-		int trimax;
-
-		pTri = T + izTri[0];
-		pTriPrev = T + izTri[tri_len-1];
-		
-		// periodic makes testing angles awkward, so :
-		// For domain vertex: just see which vertex also belongs to previous triangle.
-		// For boundary vertex: just test which neighbour vertex is also on the boundary.
-
-		if ((pVertex->flags == OUTERMOST) || (pVertex->flags == INNERMOST)) {
-			
-			// 25/05/17: New behaviour is different.
-			
-			// We only want to add an anticlockwise point for tris 0,...,tri_len-2
-		/*	
-			trimax = tri_len; // each further triangle adds a further neighbour.
-			if (pTri->cornerptr[0] == pVertex) {
-				if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertPrev = pTri->cornerptr[1]; 
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-					pVertPrev = pTri->cornerptr[2];
-				};
-			} else {
-				if (pTri->cornerptr[1] == pVertex) {
-					if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertPrev = pTri->cornerptr[2];
-					};
-				} else {
-					if ( pTri->cornerptr[1]->flags == pVertex->flags ) {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertPrev = pTri->cornerptr[1];
-					};
-				};
-			};*/
-
-			trimax = tri_len-2;
-			// And now will execute the standard code below.
-
-		} else {
-			// domain vertex: adds the more anticlockwise one only.
-			// WHY??? Probably because I wanted to make this code simple.
-			// So then Tri 0 will contain neighs 0 and N-1, not 0 and 1.
-			// But what we want is to be CONSISTENT. So we want to add 0 first
-			// Make it have 0 and 1 in first triangle.
-
-			trimax = tri_len-1; // below, only add a point for each triangle up to the last one.
-		};
-
-		if (pTri->cornerptr[0] == pVertex) {
-			if ( pTriPrev->has_vertex(pTri->cornerptr[1]) ) {
-				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-				pVertPrev = pTri->cornerptr[2];
-			} else {
-				pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
-				pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
-				pVertPrev = pTri->cornerptr[1];
-			};
-		} else {
-			if (pTri->cornerptr[1] == pVertex) {
-				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertPrev = pTri->cornerptr[2];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertPrev = pTri->cornerptr[0];
-				};
-			} else {
-				if (pTriPrev->has_vertex(pTri->cornerptr[0]) ) {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertPrev = pTri->cornerptr[1];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-					pVertPrev = pTri->cornerptr[0];
-				};
-			};
-		};
-		
-
-		for (int i = 1; i < trimax; i++)
-		{
-			pTri = T+izTri[i];
-			
-			// whichever point is neither pVertex nor pVertPrev
-			if (pTri->cornerptr[0] == pVertex) 
-			{
-				if (pTri->cornerptr[1] == pVertPrev)
-				{
-					pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-					pVertPrev = pTri->cornerptr[2];
-				} else {
-					pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-					pVertPrev = pTri->cornerptr[1];
-				};
-			} else {
-				if (pTri->cornerptr[1] == pVertex)
-				{
-					if (pTri->cornerptr[0] == pVertPrev)
-					{
-						pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
-						pVertPrev = pTri->cornerptr[2];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
-				} else {
-					if (pTri->cornerptr[0] == pVertPrev)
-					{
-						pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
-						pVertPrev = pTri->cornerptr[1];
-					} else {
-						pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
-						pVertPrev = pTri->cornerptr[0];
-					};
-				};
-			};
-		};
-		
-		//DebugDetectDuplicateNeighbourInList(pVertex);
-		
+		RebuildNeighbourList(pVertex);
+		//DebugDetectDuplicateNeighbourInList(pVertex);		
 		++pVertex;
 	};	
 	
 }
 
+void TriMesh::RebuildNeighbourList(Vertex * pVertex)
+{
+
+	int EdgeFlag;
+	Triangle * pTri, *pTriPrev;
+	long iVertex, iCaret;
+	long i, j, k;
+	Vector2 cent;
+	Vertex *pVertPrev, *relevant, *Xwhich;
+	long izTri[128], tri_len;
+
+	// Decide for triangle 0 which is the most clockwise other vertex
+	pVertex->ClearNeighs();
+	tri_len = pVertex->GetTriIndexArray(izTri);
+	int trimax;
+
+	pTri = T + izTri[0];
+	pTriPrev = T + izTri[tri_len - 1];
+
+	// periodic makes testing angles awkward, so :
+	// For domain vertex: just see which vertex also belongs to previous triangle.
+	// For boundary vertex: just test which neighbour vertex is also on the boundary.
+
+	if ((pVertex->flags == OUTERMOST) || (pVertex->flags == INNERMOST)) {
+
+		// 25/05/17: New behaviour is different.
+
+		// We only want to add an anticlockwise point for tris 0,...,tri_len-2
+		/*
+		trimax = tri_len; // each further triangle adds a further neighbour.
+		if (pTri->cornerptr[0] == pVertex) {
+		if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+		pVertPrev = pTri->cornerptr[1];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]- X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]- X);
+		pVertPrev = pTri->cornerptr[2];
+		};
+		} else {
+		if (pTri->cornerptr[1] == pVertex) {
+		if ( pTri->cornerptr[2]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertPrev = pTri->cornerptr[0];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[2]-X);
+		pVertPrev = pTri->cornerptr[2];
+		};
+		} else {
+		if ( pTri->cornerptr[1]->flags == pVertex->flags ) {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertPrev = pTri->cornerptr[0];
+		} else {
+		pVertex->AddNeighbourIndex(pTri->cornerptr[0]-X);
+		pVertex->AddNeighbourIndex(pTri->cornerptr[1]-X);
+		pVertPrev = pTri->cornerptr[1];
+		};
+		};
+		};*/
+
+		trimax = tri_len - 2;
+		// And now will execute the standard code below.
+
+	} else {
+		// domain vertex: adds the more anticlockwise one only.
+		// WHY??? Probably because I wanted to make this code simple.
+		// So then Tri 0 will contain neighs 0 and N-1, not 0 and 1.
+		// But what we want is to be CONSISTENT. So we want to add 0 first
+		// Make it have 0 and 1 in first triangle.
+
+		trimax = tri_len - 1; // below, only add a point for each triangle up to the last one.
+	};
+
+	if (pTri->cornerptr[0] == pVertex) {
+		if (pTriPrev->has_vertex(pTri->cornerptr[1])) {
+			pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+			pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+			pVertPrev = pTri->cornerptr[2];
+		} else {
+			pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+			pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+			pVertPrev = pTri->cornerptr[1];
+		};
+	} else {
+		if (pTri->cornerptr[1] == pVertex) {
+			if (pTriPrev->has_vertex(pTri->cornerptr[0])) {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertPrev = pTri->cornerptr[2];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertPrev = pTri->cornerptr[0];
+			};
+		} else {
+			if (pTriPrev->has_vertex(pTri->cornerptr[0])) {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertPrev = pTri->cornerptr[1];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+				pVertPrev = pTri->cornerptr[0];
+			};
+		};
+	};
+
+	for (int i = 1; i < trimax; i++)
+	{
+		pTri = T + izTri[i];
+
+		// whichever point is neither pVertex nor pVertPrev
+		if (pTri->cornerptr[0] == pVertex)
+		{
+			if (pTri->cornerptr[1] == pVertPrev)
+			{
+				pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+				pVertPrev = pTri->cornerptr[2];
+			} else {
+				pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+				pVertPrev = pTri->cornerptr[1];
+			};
+		} else {
+			if (pTri->cornerptr[1] == pVertex)
+			{
+				if (pTri->cornerptr[0] == pVertPrev)
+				{
+					pVertex->AddNeighbourIndex(pTri->cornerptr[2] - X);
+					pVertPrev = pTri->cornerptr[2];
+				}
+				else {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+					pVertPrev = pTri->cornerptr[0];
+				};
+			}
+			else {
+				if (pTri->cornerptr[0] == pVertPrev)
+				{
+					pVertex->AddNeighbourIndex(pTri->cornerptr[1] - X);
+					pVertPrev = pTri->cornerptr[1];
+				}
+				else {
+					pVertex->AddNeighbourIndex(pTri->cornerptr[0] - X);
+					pVertPrev = pTri->cornerptr[0];
+				};
+			};
+		};
+	};
+
+}
 
 Triangle * TriMesh::ReturnPointerToTriangleContainingPoint(
 				Triangle * pTri,             // seed for beginning triangle search
@@ -8580,7 +8958,7 @@ real TriMesh::ReturnL4_3DMagnitude(int offset_v,bool bDisplayInner) const
 
 	return 1.1*pow(L6sum/(real)num,1.0/6.0);
 }
-void TriMesh::ResetTriangleNeighbours(Triangle * pTri)
+int TriMesh::ResetTriangleNeighbours(Triangle * pTri)
 {
 	// Same caveat as before: we have not updated what vertex is at the outer edge...
 	// Probably need whole different code for disconnecting outer vertex - is that enough? maybe not
@@ -8611,10 +8989,33 @@ void TriMesh::ResetTriangleNeighbours(Triangle * pTri)
 	//	return;
 	//};
 
+
+	// Note : on failure, RPTOST returns the 'not' triangle.
 	pTri->neighbours[2] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[1],pTri);
+	if (pTri->neighbours[2] == pTri) {
+		printf("\nFailure to find neighbours[2]\n"); return 1;
+	};
+
 	pTri->neighbours[0] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[1],pTri->cornerptr[2],pTri);
+	if (pTri->neighbours[0] == pTri) {
+		printf("\nFailure to find neighbours[0]\n"); 
+		long izTri[MAXNEIGH];
+		short tri_len = pTri->cornerptr[1]->GetTriIndexArray(izTri);
+		for (int j = 0; j < tri_len; j++)
+			printf("cornerptr[1] %d tri %d = %d\n", pTri->cornerptr[1]-X, j, izTri[j]);
+		tri_len = pTri->cornerptr[2]->GetTriIndexArray(izTri);
+		for (int j = 0; j < tri_len; j++)
+			printf("cornerptr[2] %d tri %d = %d\n", pTri->cornerptr[2] - X, j, izTri[j]);
+		
+		return 1;
+	};
 	pTri->neighbours[1] = ReturnPointerToOtherSharedTriangle(pTri->cornerptr[0],pTri->cornerptr[2],pTri);
+	if (pTri->neighbours[1] == pTri) {
+		printf("\nFailure to find neighbours[1]\n"); return 1;
+	};
+	return 0;
 }
+
 			
 /*void TriMesh::SetEz()
 {
@@ -10398,6 +10799,9 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 	delete[] thetaindex;
 	delete[] thetaarray;
 
+	// We have set up a mapping so that each vertex in the source mesh carries a tile index and
+	// index of where it falls in the new sequence.
+
 
 	int numTilesOnGo = 12;
 	int spacing = numInnermostRow/numTilesOnGo;
@@ -10735,7 +11139,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 
 	// Now count how many are at -2 and need to be allocated to whatever tiles are below count.
 	
-
 	pTri = T;
 	iTile = 0;
 	int iLoose = 0;
@@ -10753,10 +11156,7 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		++pTri;
 	};
 	printf("\niLoose %d\n", iLoose);
-	getch();
 
-
-	printf("got to here 3\n");
 	// Now since we did within each row, it should be done...
 	
 	// Now turn 'volley' information into a sequence.
@@ -10804,10 +11204,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		{
 			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
 
-			if (pVertex->iIndicator == 13070) {
-				printf("13070: neigh %d || mapped from %d : %d \n", (X + izNeigh[i])->iIndicator,
-					iVertex, izNeigh[i]);
-			};
 		};
 
 		pVertdest->ClearTris();
@@ -10846,8 +11242,6 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
 		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
 		
-	//	if (pTri->indicator == 32719) printf("32719 mapped from %d\n", iTri);
-
 		++pTri;
 	}
 	
@@ -10879,5 +11273,649 @@ void TriMesh::CreateTilingAndResequence2(TriMesh * pDestMesh) {
 	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
 } 
 // This is something needed for sure.
+void TriMesh::CreateTilingAndResequence_with_data(TriMesh * pDestMesh) {
+
+
+	long * thetaindex = new long[NUMVERTICES];
+	real * thetaarray = new real[NUMVERTICES];
+	long * rindex = new long[NUMVERTICES];
+	real * rarray = new real[NUMVERTICES];
+	long iVertex, i, iTranche;
+	Vertex * pVertex = X;
+	for (iVertex = 0; iVertex < NUMVERTICES; iVertex++)
+	{
+		thetaindex[iVertex] = iVertex;
+		thetaarray[iVertex] = pVertex->pos.x / pVertex->pos.y;
+		pVertex++;
+	}
+	QuickSort(thetaindex, thetaarray, 0, NUMVERTICES - 1);
+
+	// Now take each NUMVERTICES/12
+
+	long const Ntranche = NUMVERTICES / 12;
+	if (Ntranche * 12 != NUMVERTICES) {
+		printf("(Ntranche * 12 != NUMVERTICES)\n");
+		while (1) getch();
+	};
+
+	long iCaret = 0;
+	int iTile = 0;
+	long iDestVert = 0;
+	for (iTranche = 0; iTranche < 12; iTranche++)
+	{
+		for (i = 0; i < Ntranche; i++)
+		{
+			rindex[i] = thetaindex[iCaret]; // which vertex
+			rarray[i] = (X + rindex[i])->pos.modulus();
+			++iCaret;
+		};
+
+		QuickSort(rindex, rarray, 0, Ntranche - 1);
+
+		for (i = 0; i < Ntranche; i++)
+		{
+			(X + rindex[i])->iVolley = iTile;
+			(X + rindex[i])->iIndicator = iDestVert;
+			if ((i + 1) % threadsPerTileMajor == 0) iTile++;
+			iDestVert++;
+		};
+	}
+
+	delete[] rindex;
+	delete[] rarray;
+	delete[] thetaindex;
+	delete[] thetaarray;
+
+	// We have set up a mapping so that each vertex in the source mesh carries a tile index and
+	// index of where it falls in the new sequence.
+	
+	int numTilesOnGo = 12;
+	int spacing = numInnermostRow / numTilesOnGo;
+
+	// Distribute remainder through tiles! :
+	//	int Tileskips_between_remainder_points = numTilesOnGo/(numInnermostRow % spacing);
+
+	printf("Reseq : vertex mapping done.\n"); // All we have done is set indicator though
+
+											  // This WORKED. iVolley and iIndicator are populated, we got some halfway sensible values in there. Now what?:
+
+											  // ===============================================================================	
+											  // -------------------------------------------------------------------------------
+
+											  // Now comes the next: assign triangles into blocks also. :-(
+											  // More fiddlinesse :
+
+											  // First preference if triangle has 2 points within a vertex tile then assign it there.
+											  // We then try assigning 3-separate triangles to the tile that has the least assigned.
+											  // Do we end up with an unassignable triangle? In that case we have to see what?
+											  // Keep a record of how many 'negotiables' were attributed to each tile.
+											  // Set the unassignable to the one with the most negotiables.
+											  // Find one of the others and reassign it to a different tile.
+											  // If they all had 0 other negotiables, we fail.
+
+	long tris_assigned[numTriTiles];
+	long negotiables[numTriTiles];
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	memset(negotiables, 0, sizeof(long)*numTriTiles);
+	long iTri, iVolley0, iVolley1, iVolley2;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if ((iVolley0 == iVolley1) || (iVolley0 == iVolley2)) {
+			pTri->indicator = iVolley0; // only 1 int available in triangle
+			tris_assigned[iVolley0]++;
+			if (tris_assigned[iVolley0] > threadsPerTileMinor) {
+				printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+					iVolley0);
+				getch();
+			};
+		}
+		else {
+			if (iVolley1 == iVolley2)
+			{
+				pTri->indicator = iVolley1;
+				tris_assigned[iVolley1]++;
+				if (tris_assigned[iVolley1] > threadsPerTileMinor) {
+					printf("oh no - too many tris allocated on 1st pass to tri tile %d\n",
+						iVolley1);
+					getch();
+				};
+			}
+			else {
+				pTri->indicator = -1;
+				negotiables[iVolley0]++;
+				negotiables[iVolley1]++;
+				negotiables[iVolley2]++;
+			};
+		};
+		++pTri;
+	}
+	bool bThirdPassNeeded = false;
+	long num0, num1, num2, nego0, nego1, nego2;
+
+	// If tris_assigned + negotiables == threadsPerTileMinor then we
+	// should start by assigning those...
+	// If 1 more, we can go along assigning those, and so on.
+	// Okay, that didn't work.
+
+	// TRY:
+	// Each negotiable triangle, if there is one tile with fewer allocated, assign it to that tile.
+	// No --- base tiles have fewer negotiable.
+
+	// OR: Work up each tranche, set the tris on the left hand side to get the full complement in each tile.?
+
+	// Overall iterative to get contiguous could be nontrivial; for now just let some be loose tris.
+
+	// Simple way: 
+	// i. assign each negotiable to the tile that has the least total, iteratively. 
+	// Until we get stuck ...
+	// because there might be some that could still go any direction.
+	// ii. For those ones always pick the lowest corner or rightmost.
+	// iii. We may well be left over with a few loose ones that now belong to a tile far away --- too bad. Notify how many.
+
+	int i1, i2, j1, j2;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		iVolley0 = pTri->cornerptr[0]->iVolley;
+		iVolley1 = pTri->cornerptr[1]->iVolley;
+		iVolley2 = pTri->cornerptr[2]->iVolley;
+
+		if (pTri->indicator == -1)
+		{
+			// . Only choose between those which do not yet have a full complement
+			// . Choose the one with the least total
+			// . Failing that, choose amongst those, the one with y below centroid, or if there are 2, the rightmost of those.
+			bool bFell_out_2way = false;
+			bool bFell_out_3way = false;
+
+			if (tris_assigned[iVolley0] == threadsPerTileMinor) {
+				// choosing only between iVolley1 and iVolley2
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						// triangle not assignable any more -- it's a loose one
+						pTri->indicator = -2;
+					}
+					else {
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
+					};
+				}
+				else {
+					// 0 was maxed out, 1 was not
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						pTri->indicator = iVolley1;
+						tris_assigned[iVolley1]++;
+					}
+					else {
+						// between 1 & 2
+
+						bFell_out_2way = true;
+						i1 = iVolley1; i2 = iVolley2;
+						j1 = 1; j2 = 2;
+					};
+				};
+			}
+			else {
+				if (tris_assigned[iVolley1] == threadsPerTileMinor) {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						pTri->indicator = iVolley0;
+						tris_assigned[iVolley0]++;
+					}
+					else {
+						// between 0 and 2
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley2;
+						j1 = 0; j2 = 2;
+					};
+				}
+				else {
+					if (tris_assigned[iVolley2] == threadsPerTileMinor) {
+						// between 0 and 1
+						bFell_out_2way = true;
+						i1 = iVolley0; i2 = iVolley1;
+						j1 = 0; j2 = 1;
+					}
+					else {
+						// 3-way choice
+
+						bFell_out_3way = true;
+					};
+				};
+			};
+
+			f64_vec2 u[3], centroid;
+			if ((bFell_out_2way) || (bFell_out_3way))
+			{
+				pTri->MapLeftIfNecessary(u[0], u[1], u[2]);
+				centroid = THIRD*(u[0] + u[1] + u[2]);
+			}
+
+			if (bFell_out_3way) {
+				// If one is lower total than the other 2, it's that one;
+				// if a pair is lower, go to bFell_out_2way = true
+				// IF all 3 are the same total, do a geometrical allocation to bottommost point or rightmost if 2 below centroid.
+
+				long total0 = tris_assigned[0] + negotiables[0];
+				long total1 = tris_assigned[1] + negotiables[1];
+				long total2 = tris_assigned[2] + negotiables[2];
+
+				if (total0 < total1) {
+					if (total2 < total0) {
+						// total2 is lowest
+						pTri->indicator = iVolley2;
+						tris_assigned[iVolley2]++;
+					}
+					else {
+						if (total2 == total0) {
+							bFell_out_2way = true;
+							i1 = iVolley0; i2 = iVolley2;
+							j1 = 0; j2 = 2;
+						}
+						else {
+							// total0 is lowest
+							pTri->indicator = iVolley0;
+							tris_assigned[iVolley0]++;
+						};
+					};
+				}
+				else {
+					if (total1 < total0) {
+						if (total2 < total1) {
+							// total2 is lowest
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						}
+						else {
+							if (total2 == total1) {
+								bFell_out_2way = true;
+								i1 = iVolley1; i2 = iVolley2;
+								j1 = 1; j2 = 2;
+							}
+							else {
+								// total1 is lowest
+								pTri->indicator = iVolley1;
+								tris_assigned[iVolley1]++;
+							};
+						};
+					}
+					else {
+						// total1 == total0
+						if (total2 < total0) {
+							pTri->indicator = iVolley2;
+							tris_assigned[iVolley2]++;
+						}
+						else {
+							if (total2 > total0) {
+								bFell_out_2way = true;
+								i1 = iVolley0; i2 = iVolley1;
+								j1 = 0; j2 = 1;
+							}
+							else {
+								// ALL EQUAL TOTAL
+
+								// How many are below centroid?
+
+								int below = ((u[0].y < centroid.y) ? 1 : 0) +
+									((u[1].y < centroid.y) ? 1 : 0) +
+									((u[2].y < centroid.y) ? 1 : 0);
+								if (below == 1) {
+									// detect which one:
+
+									if (u[0].y < centroid.y) {
+										pTri->indicator = iVolley0;
+										tris_assigned[iVolley0]++;
+									};
+									if (u[1].y < centroid.y) {
+										pTri->indicator = iVolley1;
+										tris_assigned[iVolley1]++;
+									};
+									if (u[2].y < centroid.y) {
+										pTri->indicator = iVolley2;
+										tris_assigned[iVolley2]++;
+									};
+								}
+								else {
+									if (below != 2) { printf("3RROR : iTri %d below != 2", iTri); getch(); };
+
+									// 2 below so pick rightmost point.
+									if (u[0].x > u[1].x) {
+										if (u[0].x > u[2].x) {
+											pTri->indicator = iVolley0;
+											tris_assigned[iVolley0]++;
+										}
+										else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									}
+									else {
+										if (u[1].x > u[2].x) {
+											pTri->indicator = iVolley1;
+											tris_assigned[iVolley1]++;
+										}
+										else {
+											pTri->indicator = iVolley2;
+											tris_assigned[iVolley2]++;
+										};
+									};
+								};
+							};
+						};
+					};
+				};
+			};
+
+			if (bFell_out_2way) {
+				if (tris_assigned[i1] + negotiables[i1] > tris_assigned[i2] + negotiables[i2])
+				{
+					pTri->indicator = i2; // attribute to the one with less going for it
+					tris_assigned[i2]++;
+				}
+				else {
+					if (tris_assigned[i1] + negotiables[i1] < tris_assigned[i2] + negotiables[i2])
+					{
+						pTri->indicator = i1;
+						tris_assigned[i1]++;
+					}
+					else {
+						// decide based if only one of them is below centroid:
+						if ((u[j1].y > centroid.y) && (u[j2].y < centroid.y))
+						{
+							pTri->indicator = i2;
+							tris_assigned[i2]++;
+						}
+						else {
+							if ((u[j1].y < centroid.y) && (u[j2].y > centroid.y))
+							{
+								pTri->indicator = i1;
+								tris_assigned[i1]++;
+							}
+							else {
+
+								// else decide to allocate to rightmost one:
+
+								if (u[j1].x > u[j2].x) {
+									pTri->indicator = i1;
+									tris_assigned[i1]++;
+								}
+								else {
+									pTri->indicator = i2;
+									tris_assigned[i2]++;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			// No matter what, triangle is no longer negotiable:
+			negotiables[iVolley0]--;
+			negotiables[iVolley1]--;
+			negotiables[iVolley2]--;
+		}
+		++pTri;
+	}
+
+	// Now count how many are at -2 and need to be allocated to whatever tiles are below count.
+
+	pTri = T;
+	iTile = 0;
+	int iLoose = 0;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		if (pTri->indicator == -2)
+		{
+			while (tris_assigned[iTile] == threadsPerTileMinor) iTile++;
+
+			pTri->indicator = iTile;
+			tris_assigned[iTile]++;
+			printf("Loose tri: %d assigned to tile %d \n", iTri, iTile);
+			iLoose++;
+		};
+		++pTri;
+	};
+	printf("\niLoose %d\n", iLoose);
+
+	// Now since we did within each row, it should be done...
+
+	// Now turn 'volley' information into a sequence.
+	// WE CHANGE WHAT indicator MEANS :
+
+	memset(tris_assigned, 0, sizeof(long)*numTriTiles);
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		int iWhich = pTri->indicator;
+		pTri->indicator = iWhich*threadsPerTileMinor + tris_assigned[iWhich]; // new index for triangle
+		tris_assigned[iWhich]++;
+		++pTri;
+	};
+
+	for (iTile = 0; iTile < numTriTiles; iTile++) {
+		printf("%d : %d  ||", iTile, tris_assigned[iTile]);
+		if (iTile % 4 == 0) printf("\n");
+	}
+
+	printf("Tri resequence done...\n");
+
+	long izNeigh[128], izTri[128];
+
+	// We then can set the new sequence and try to resequence the triangles, and affect the
+	// triangle index lists.
+	//  - Create 2nd system:
+
+	pVertex = X;
+	Vertex * pVertdest;
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + pVertex->iIndicator;
+
+		//pVertdest->CopyDataFrom(pVertex);
+
+		// This will sort flags etc:
+		//memcpy(pVertdest, pVertex, sizeof(Vertex));
+		pVertdest->pos = pVertex->pos;
+		pVertdest->flags = pVertex->flags;
+		pVertdest->has_periodic = pVertex->has_periodic;
+		pVertdest->AreaCell = pVertex->AreaCell;
+		pVertdest->iVolley = pVertex->iVolley;
+		pVertdest->iScratch = pVertex->iScratch;
+		pVertdest->iIndicator = pVertex->iIndicator;
+		
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex((X + izNeigh[i])->iIndicator);
+		};
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			pVertdest->AddTriIndex((T + izTri[i])->indicator);
+		};
+
+		// if iVertex == 26511, what index does this map into in pDestMesh?
+		if (iVertex == 26511) printf("26511 maps to %d . n = %1.9E \n",
+			pVertex->iIndicator, pData[iVertex + BEGINNING_OF_CENTRAL].n
+		);
+
+		memcpy(&(pDestMesh->pData[pVertex->iIndicator+BEGINNING_OF_CENTRAL]), &(pData[iVertex + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+
+		// Careful about other stuff.
+		++pVertex;
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+
+	Triangle * pTriDest;
+	pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + pTri->indicator;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal, pTri->edge_normal, sizeof(Vector2) * 3);
+		
+		// Neighbour list, cornerptr list, what else to rewrite?
+
+		pTriDest->neighbours[0] = pDestMesh->T + pTri->neighbours[0]->indicator;
+		pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+		pTriDest->neighbours[2] = pDestMesh->T + pTri->neighbours[2]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + pTri->cornerptr[0]->iIndicator;
+		pTriDest->cornerptr[1] = pDestMesh->X + pTri->cornerptr[1]->iIndicator;
+		pTriDest->cornerptr[2] = pDestMesh->X + pTri->cornerptr[2]->iIndicator;
+
+		memcpy(&(pDestMesh->pData[pTri->indicator]), &(pData[iTri]), sizeof(plasma_data));
+
+		++pTri;
+	}
+
+	printf("Tiling & resequencing done.\n");
+
+	// Also copy across any other stuff from source to dest:
+
+	//	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+	//  - Create Systdata to match it
+	//  - When we come back from GPU: 
+	//    -- we want to refresh this post-Delaunay flips.
+	//    -- can a flip trigger a local swap of indices to move smth between blocks?
+
+	//    -- We want that to operate on Systdata not just System, because System does
+	//       not have data on triangles.
+
+	//   -- (On the other hand there is an argument that since System has objects for
+	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
+}
+
+
+void TriMesh::CopyMesh(TriMesh * pDestMesh)
+{
+	Vertex * pVertex = X;
+	Vertex * pVertdest;
+	long iVertex, iTri, i;
+	long izNeigh[MAXNEIGH];
+	long izTri[MAXNEIGH];
+
+	for (iVertex = 0; iVertex < numVertices; iVertex++)
+	{
+		pVertdest = pDestMesh->X + iVertex;
+
+		//pVertdest->CopyDataFrom(pVertex);
+
+		// This will sort flags etc:
+		//memcpy(pVertdest, pVertex, sizeof(Vertex));
+		pVertdest->pos = pVertex->pos;
+		pVertdest->flags = pVertex->flags;
+		pVertdest->has_periodic = pVertex->has_periodic;
+		pVertdest->AreaCell = pVertex->AreaCell;
+		pVertdest->iVolley = pVertex->iVolley;
+		pVertdest->iScratch = pVertex->iScratch;
+		pVertdest->iIndicator = pVertex->iIndicator;
+
+		// Only neighbour list is relevant so far...
+		pVertdest->ClearNeighs();
+		int neigh_len = pVertex->GetNeighIndexArray(izNeigh);
+		for (i = 0; i < neigh_len; i++)
+		{
+			pVertdest->AddNeighbourIndex(izNeigh[i]);
+		};
+
+		pVertdest->ClearTris();
+		// Only neighbour list is relevant so far...
+		int tri_len = pVertex->GetTriIndexArray(izTri);
+		for (i = 0; i < tri_len; i++)
+		{
+			//pVertdest->AddTriIndex((T + izTri[i])->indicator);
+			pVertdest->AddTriIndex(izTri[i]);
+		};
+		++pVertex;
+
+		memcpy(&(pDestMesh->pData[iVertex + BEGINNING_OF_CENTRAL]), &(pData[iVertex + BEGINNING_OF_CENTRAL]), sizeof(plasma_data));
+
+		// Careful about other stuff.
+	}
+	// How to fill in lists? Need to remap: if old list said 25, new list says i[25]
+	// For neighbours.
+
+	Triangle * pTriDest;
+	Triangle * pTri = T;
+	for (iTri = 0; iTri < numTriangles; iTri++)
+	{
+		pTriDest = pDestMesh->T + iTri;
+		// 
+		pTriDest->u8domain_flag = pTri->u8domain_flag;
+		pTriDest->area = pTri->area;
+		pTriDest->cent = pTri->cent;
+		pTriDest->periodic = pTri->periodic;
+		memcpy(pTriDest->edge_normal, pTri->edge_normal, sizeof(Vector2) * 3);
+
+		// Neighbour list, cornerptr list, what else to rewrite?
+
+		pTriDest->neighbours[0] = pDestMesh->T + (pTri->neighbours[0]-T);
+		pTriDest->neighbours[1] = pDestMesh->T + (pTri->neighbours[1]-T);
+		pTriDest->neighbours[2] = pDestMesh->T + (pTri->neighbours[2] - T);
+		//pTriDest->neighbours[1] = pDestMesh->T + pTri->neighbours[1]->indicator;
+
+		pTriDest->cornerptr[0] = pDestMesh->X + (pTri->cornerptr[0]-X);
+		pTriDest->cornerptr[1] = pDestMesh->X + (pTri->cornerptr[1]-X);
+		pTriDest->cornerptr[2] = pDestMesh->X + (pTri->cornerptr[2]-X);
+
+		memcpy(&(pDestMesh->pData[iTri]), &(pData[iTri]), sizeof(plasma_data));
+
+		++pTri;
+	}
+
+	// Also copy across any other stuff from source to dest:
+
+	//	pDestMesh->EzTuning = this->EzTuning;
+	pDestMesh->Innermost_r_achieved = this->Innermost_r_achieved;
+	pDestMesh->Outermost_r_achieved = this->Outermost_r_achieved;
+	pDestMesh->InnermostFrillCentroidRadius = this->InnermostFrillCentroidRadius;
+	pDestMesh->OutermostFrillCentroidRadius = this->OutermostFrillCentroidRadius;
+	pDestMesh->Iz_prescribed = this->Iz_prescribed;
+	pDestMesh->numReverseJzTris = this->numReverseJzTris;
+	pDestMesh->numTriangles = this->numTriangles;
+	pDestMesh->numVertices = this->numVertices;
+
+	printf("Copy mesh done. But it doesn't seem very comprehensive.\n");
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+	//  - Create Systdata to match it
+	//  - When we come back from GPU: 
+	//    -- we want to refresh this post-Delaunay flips.
+	//    -- can a flip trigger a local swap of indices to move smth between blocks?
+
+	//    -- We want that to operate on Systdata not just System, because System does
+	//       not have data on triangles.
+
+	//   -- (On the other hand there is an argument that since System has objects for
+	//      vertex and triangle, it will be easier to avoid making mistakes if we did for System as well.)
+}
+
 
 #endif

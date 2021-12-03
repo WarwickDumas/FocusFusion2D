@@ -497,6 +497,7 @@ void cuSyst::SendToDevice(cuSyst & Xdevice)
 	Call(cudaThreadSynchronize(), "cudaThreadSynchronize cuSyst::SendToHost");
 }
 
+
 void cuSyst::ReportDifferencesHost(cuSyst &X2)
 {
 	long iMinor, iVertex, iTri;
@@ -613,13 +614,13 @@ void cuSyst::Output(const char * filename)
 }
 void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 {
+	// AsSUMES THIS cuSyst has been allocated on the host.
 	// USES pTri->cent
 
 	// Variables on host are called TriMinorNeighLists and TriMinorPBCLists
 	memcpy(p_izNeigh_TriMinor, pX->TriMinorNeighLists, Ntris * 6 * sizeof(long)); // pointless that we duplicate it but nvm
 	memcpy(p_szPBC_triminor, pX->TriMinorPBCLists, Ntris * 6 * sizeof(char));
 
-	// AsSUMES THIS cuSyst has been allocated on the host.
 	if ((Nverts != pX->numVertices) ||
 		(Ntris != pX->numTriangles))
 	{
@@ -651,10 +652,10 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		p_vie[iMinor].vez = data.vez;
 		p_vie[iMinor].viz = data.viz;
 
-		if (iMinor == 25964 - BEGINNING_OF_CENTRAL) {
-			printf("iMinor %d p_vie[iMinor].vez %1.10E viz %1.10E\n", iMinor, p_vie[iMinor].vez, p_vie[iMinor].viz);
-		//	getch();
-		}
+		//if (iMinor == 25964 - BEGINNING_OF_CENTRAL) {
+		//	printf("iMinor %d p_vie[iMinor].vez %1.10E viz %1.10E\n", iMinor, p_vie[iMinor].vez, p_vie[iMinor].viz);
+		////	getch();
+		//}
 
 		p_B[iMinor] = data.B;
 		p_AreaMinor[iMinor] = pX->AreaMinorArray[iMinor];
@@ -672,6 +673,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 	structural info;
 	for (iVertex = 0; iVertex < Nverts; iVertex++)
 	{
+		
 		tri_len = pVertex->GetTriIndexArray(izTri);
 		info.neigh_len = tri_len;
 		memset(izTri+tri_len, 0, sizeof(long)*(MAXNEIGH-tri_len));
@@ -710,6 +712,7 @@ void cuSyst::PopulateFromTriMesh(TriMesh * pX)
 		++pVertex;
 	};
 	
+
 	long iTri; 
 	// Triangle structural?
 	Triangle * pTri = pX->T;

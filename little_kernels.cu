@@ -2574,6 +2574,18 @@ __global__ void kernelAdvectPositionsTris(
 	p_info_dest[index] = info;
 }
 
+__global__ void BreakDownT3(
+	f64 * __restrict__ p_Tn,
+	f64 * __restrict__ p_Ti,
+	f64 * __restrict__ p_Te,
+	T3 * __restrict__ p_Tmove)
+{
+	long const index = blockIdx.x*blockDim.x + threadIdx.x;
+	T3 T = p_Tmove[index];
+	p_Tn[index] = T.Tn;
+	p_Ti[index] = T.Ti;
+	p_Te[index] = T.Te;
+}
 
 __global__ void kernelCalculateNu_eHeartNu_iHeart_nu_nn_visc(
 	structural * __restrict__ p_info_major,
@@ -4946,18 +4958,17 @@ __global__ void Augment_dNv_minor(
 			coeff2 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i2];
 			coeff3 = 0.333333333333333*Nnhere / p_temp_Nntotalmajor[tricornerindex.i3];
 
-			// DEBUG:
-			if (0)//iMinor == CHOSEN) 
-				printf("%d Nntotal123 %1.9E %1.9E %1.9E MARneutz %1.8E %1.8E %1.8E \n",CHOSEN,
-				p_temp_Nntotalmajor[tricornerindex.i1],
-				p_temp_Nntotalmajor[tricornerindex.i2],
-				p_temp_Nntotalmajor[tricornerindex.i3],
-				p_MAR_neut_major[tricornerindex.i1].z,
-				p_MAR_neut_major[tricornerindex.i2].z,
-				p_MAR_neut_major[tricornerindex.i3].z
-				);
-
-
+			//// DEBUG:
+			//if (0) //iMinor == CHOSEN) 
+			//	printf("%d Nntotal123 %d %d %d %1.9E %1.9E %1.9E MARneutz %1.8E %1.8E %1.8E \n",CHOSEN,
+			//	tricornerindex.i1, tricornerindex.i2, tricornerindex.i3,
+			//	p_temp_Nntotalmajor[tricornerindex.i1],
+			//	p_temp_Nntotalmajor[tricornerindex.i2],
+			//	p_temp_Nntotalmajor[tricornerindex.i3],
+			//	p_MAR_neut_major[tricornerindex.i1].z,
+			//	p_MAR_neut_major[tricornerindex.i2].z,
+			//	p_MAR_neut_major[tricornerindex.i3].z
+			//	);
 
 			f64_vec3 add_n = p_MAR_neut_major[tricornerindex.i1] * coeff1
 				+ p_MAR_neut_major[tricornerindex.i2] * coeff2

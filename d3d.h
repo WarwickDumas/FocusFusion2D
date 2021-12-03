@@ -2,6 +2,8 @@
 #ifndef d3d_h
 #define d3d_h
 
+#include "switches.h"
+
 #pragma warning( disable : 4996 ) // disable deprecated warning 
 #pragma warning( disable : 4995 ) // disable deprecated warning 
 
@@ -259,11 +261,14 @@ public:
 		
 		D3DPRESENT_PARAMETERS d3dpp;
 		HRESULT hr;
+		printf("D3D::Initialise called.\n");
 
 		// Create the D3D object.
 		if( NULL == ( g_pD3D = Direct3DCreate9( D3D_SDK_VERSION ) ) )
 			return E_FAIL;
-	    
+
+		printf("g_pD3D = Direct3DCreate9( D3D_SDK_VERSION ) returned success.\n");
+
 		// Set up the structure used to create the D3DDevice. Since we are now
 		// using more complex geometry, we will create a device with a zbuffer.
 		ZeroMemory( &d3dpp, sizeof( d3dpp ) );
@@ -283,25 +288,36 @@ public:
 		d3dpp.hDeviceWindow=hWnd;
 		d3dpp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
- /*
-	DXChk(g_pD3D->CheckDeviceType(D3DADAPTER_DEFAULT,//Adapter
-                           D3DDEVTYPE_HAL,    //DeviceType
-                           D3DFMT_X8R8G8B8,     //DisplayFormat
-                           D3DFMT_X8R8G8B8,     //BackBufferFormat
-                           false)             //Windowed?
-						   , 1 // identifier
-						   );            
-*/
-		if(DXChk(g_pD3D->CreateDevice( D3DADAPTER_DEFAULT, 
+		printf("d3dpp object populated.\n");
+
+ 
+	//DXChk(g_pD3D->CheckDeviceType(D3DADAPTER_DEFAULT,//Adapter
+ //                          D3DDEVTYPE_HAL,    //DeviceType
+ //                          D3DFMT_X8R8G8B8,     //DisplayFormat
+ //                          D3DFMT_X8R8G8B8,     //BackBufferFormat
+ //                          false)             //Windowed?
+	//					   , 1 // identifier
+	//					   );            
+
+		
+		if(DXChk(g_pD3D->CreateDevice( 
+#ifdef REMOTE			
+			1
+#else
+			D3DADAPTER_DEFAULT
+#endif
+			, 
 									  D3DDEVTYPE_HAL, hWnd, // HAL is fastest already
                                       D3DCREATE_HARDWARE_VERTEXPROCESSING | D3DCREATE_FPU_PRESERVE, // change to HARDWARE
 									  // trying D3DCREATE_FPU_PRESERVE to see if the program stops being f'd up
-                                      &d3dpp, &pd3dDevice ) 
-									  )){
+                                      &d3dpp, &pd3dDevice )
+									  ,10200)){
 										  MessageBox(NULL,"CreateDevice failed","",MB_OK);
         
 										  return E_FAIL;};
 	
+		printf("g_pD3D->CreateDevice returned success.\n");
+
 		// create a font
 		ZeroMemory(&logfont,sizeof(D3DXFONT_DESC));
 		logfont.Height = 16; // made bigger
@@ -312,6 +328,9 @@ public:
 		strcpy(logfont.FaceName,"Arial");
 		D3DXCreateFontIndirect(pd3dDevice, &logfont, &g_pFont);
 		
+		printf("D3DXCreateFontIndirect called.\n");
+
+
 		ZeroMemory(&logfont,sizeof(D3DXFONT_DESC));
 		logfont.Height = 24;
 		logfont.Width = 8;
@@ -320,7 +339,9 @@ public:
 		logfont.CharSet = DEFAULT_CHARSET;
 		strcpy(logfont.FaceName,"Times");
 		D3DXCreateFontIndirect(pd3dDevice, &logfont, &g_pFont2);
-		
+
+		printf("D3DXCreateFontIndirect called.\n");
+
 		ZeroMemory(&logfont,sizeof(D3DXFONT_DESC));
 		logfont.Height = 15;
 		logfont.Width = 5;
@@ -330,11 +351,11 @@ public:
 		strcpy(logfont.FaceName,"Arial");
 		D3DXCreateFontIndirect(pd3dDevice, &logfont, &g_pFontsmall);
 		
-
-
-
-		InitAllVertexDeclarations();	
+		printf("D3DXCreateFontIndirect called.\n");
 		
+		InitAllVertexDeclarations();	
+
+		printf("Done InitAllVertexDeclarations\n");
 		// Does nothing: ?
 		// Turn on the zbuffer
 		pd3dDevice->SetRenderState( D3DRS_ZENABLE, TRUE );
@@ -348,6 +369,8 @@ public:
 		// Turn OFF D3D lighting
 		pd3dDevice->SetRenderState( D3DRS_LIGHTING, FALSE );
 		
+		printf("Done SetRenderState x4\n");
+
 		// I guess if you are using shaders then the above has no effect on anything
 		return S_OK;
 		

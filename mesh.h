@@ -1,5 +1,6 @@
+
 #include "FFxtubes.h"
-#include "bandlu.h" // must not include a cpp file here!
+//#include "bandlu.h" // must not include a cpp file here!
 
 #include <conio.h>
 // no - don't need to be calling getch() in a header file !
@@ -12,13 +13,11 @@
 //#include <dinput.h>
 #include <dxerr.h>
 #include "d3d.h"
-
-#include "cuda_struct.h"
+#include "FFxtubes.h"
 
 #ifndef mesh_h
 #define mesh_h
 
-#define CP_MAX  64
 #define FLAG_CODE_LEFT    1
 #define FLAG_CODE_RIGHT  2
 #define FLAG_CODE_BOTTOM 3
@@ -28,6 +27,29 @@
 #define FLAG_CODE_RIGHTTOP 5
 #define FLAG_CODE_RIGHTBOT 6
 
+
+#define HOSTDEVICE __host__ __device__
+#define QUALS __host__ __device__ inline
+
+#define CP_MAX  16
+
+// 12*32768*5 = 2MB .. just to keep things in perspective.
+// We should keep the number down just to reduce fetch size.
+// Let's keep it real. nvT is best for our fetches and therefore is best.
+//
+//long const numTriTiles = 288; // note that there are also centrals
+//long const numTilesMajor = 288;
+//long const numTilesMinor = 432; // 432 = 288+144
+//								// 456*256 = 304*256 + 304*128
+//
+//								// numTriTiles == numTilesMajor because the two sets are bijective.
+//								// Then we also have to assign central minors to tiles, twice the size of the major tiles...
+//
+//long const threadsPerTileMinor = 256;
+//long const threadsPerTileMajor = 128; // see about it - usually we take info from minor.
+//long const SIZE_OF_MAJOR_PER_TRI_TILE = 128;
+//long const SIZE_OF_TRI_TILE_FOR_MAJOR = 256;
+//long const BEGINNING_OF_CENTRAL = threadsPerTileMinor * numTriTiles;
 
 // DO NOT WANT THE SMART ARRAY CLASSES IN NVCC.
 // MOVED HERE.
@@ -93,6 +115,22 @@ public:
 };
 
 
+struct three_vec3 {
+	f64_vec3 neut, ion, elec;
+	// Note that viscosity CAN add momentum in z direction ... of course
+};
+struct three_f64 {
+	f64 neut, ion, elec;
+};
+
+struct ShardModel {
+	f64 n[MAXNEIGH];
+	f64 n_cent;
+}; // 17 doubles
+
+struct NTrates {
+	f64 N, Nn, NiTi, NeTe, NnTn; // give the rates of change for these quantities
+};
 class ConvexPolygon
 {
 public:
@@ -103,60 +141,62 @@ public:
 	int status[CP_MAX];
 	int numCoords;
 
-	ConvexPolygon(const Vector2 & x1,const Vector2 & x2,const Vector2 & x3);
-	ConvexPolygon();
+	HOSTDEVICE ConvexPolygon(const Vector2 & x1,const Vector2 & x2,const Vector2 & x3);
+	HOSTDEVICE ConvexPolygon();
 	
-	void SetTri(const Vector2 & x1,const Vector2 & x2, const Vector2 & x3);
-	void CreateClockwiseImage(const ConvexPolygon & cpSrc) ;
-	void CreateAnticlockwiseImage(const ConvexPolygon & cpSrc);
+	void HOSTDEVICE SetTri(const Vector2 & x1,const Vector2 & x2, const Vector2 & x3);
+	void HOSTDEVICE CreateClockwiseImage(const ConvexPolygon & cpSrc) ;
+	void HOSTDEVICE CreateAnticlockwiseImage(const ConvexPolygon & cpSrc);
 	
-	void inline ConvexPolygon::Clear()
+	void HOSTDEVICE Clear()
 	{
 		numCoords = 0;
 	}
 
-	void inline ConvexPolygon::add(real x,real y)
+	void HOSTDEVICE add(real x,real y)
 	{
 		numCoords++;
 		coord[numCoords-1].x = x;
 		coord[numCoords-1].y = y;
 	}
 
-	void inline ConvexPolygon::add(Vector2 & u)
+	void HOSTDEVICE add(Vector2 u)
 	{
 		numCoords++;
 		coord[numCoords-1] = u;
 	}
 
-	bool ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3);
-	void CopyFrom(ConvexPolygon & cp);
-	real FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
-	real FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
-	real GetArea();
-	void ConvexPolygon::GetCentre(Vector2 & centre);
-	bool ConvexPolygon::GetIntersectionWithTriangle(ConvexPolygon * pPoly,Vector2 & r1, Vector2 & r2, Vector2 & r3);
-	bool ConvexPolygon::GetIntersectionWithPolygon(ConvexPolygon * pPoly, ConvexPolygon * pClip);
+	bool IsConvex();
+
+	int ClipAgainstHalfplane(const Vector2 & r1, const Vector2 & r2, const Vector2 & r3);
+	void HOSTDEVICE CopyFrom(ConvexPolygon & cp);
+	real HOSTDEVICE FindTriangleIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3);
+	real HOSTDEVICE FindQuadrilateralIntersectionArea(Vector2 & r1, Vector2 & r2, Vector2 & r3, Vector2 & r4);
+	real HOSTDEVICE GetArea();
+	void HOSTDEVICE GetCentre(Vector2 & centre);
+	bool GetIntersectionWithTriangle(ConvexPolygon * pPoly,Vector2 & r1, Vector2 & r2, Vector2 & r3);
+	bool GetIntersectionWithPolygon(ConvexPolygon * pPoly, ConvexPolygon * pClip);
 	
-	void ConvexPolygon::Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
+	void HOSTDEVICE Integrate_Planes(Vector2 & r1, Vector2 & r2, Vector2 & r3,
 										real yvals1[],
 										real yvals2[],
 										real yvals3[],	
 										real results[],
 										long N_planes);
-	void ConvexPolygon::IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
+	void HOSTDEVICE IntegrateMass(Vector2 & r1, Vector2 & r2, Vector2 & r3,
 									real yvals1, real yvals2, real yvals3, real * pResult);
 	//real GetSideLength(int side);
-	real GetPrecedingSideLength(int side);
-	real GetSucceedingSideLength(int side);
+	real HOSTDEVICE GetPrecedingSideLength(int side);
+	real HOSTDEVICE GetSucceedingSideLength(int side);
 	
-	Vector3 ConvexPolygon::Get_curl2D_from_anticlockwise_array(Vector3 A[]);
-	Vector2 ConvexPolygon::Get_grad_from_anticlockwise_array(real Te[]);
-	Vector2 ConvexPolygon::Get_Integral_grad_from_anticlockwise_array(real Te[]);
+	Vector3 HOSTDEVICE Get_curl2D_from_anticlockwise_array(Vector3 A[]);
+	Vector2 HOSTDEVICE Get_grad_from_anticlockwise_array(real Te[]);
+	Vector2 HOSTDEVICE Get_Integral_grad_from_anticlockwise_array(real Te[]);
 
-	void ConvexPolygon::Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy);
+	void HOSTDEVICE Get_Bxy_From_Az(real Az_array[], real * pBx,real * pBy);
 	
-	Vector2 ConvexPolygon::CalculateBarycenter();
-	real ConvexPolygon::minmod(real n[], // output array
+	Vector2 HOSTDEVICE CalculateBarycenter();
+	real HOSTDEVICE minmod(real n[], // output array
 					  real ndesire[], real N, 
 					  Vector2 central );
 };
@@ -419,7 +459,7 @@ int const AUXNEIGHMAX = 14; // geometric neighbours list
 
 struct ShardData
 {
-	fluid_nvT fluidnvT[MAXNEIGH];	
+	fluid_nvT nvT[MAXNEIGH];	
 	ConvexPolygon cp;
 	// Coords must match the values array.
 	Vector2 central;
@@ -441,6 +481,44 @@ struct Coeff_array
 	// Think we will have to switch to dynamic allocation.	
 };
 
+struct plasma_data
+{
+
+	f64 n_n, n, Tn, Ti, Te; // 10 11 12 13 14
+	f64_vec2 vxy;   //  3  4
+	f64 vez, viz;   //  5 6
+	f64_vec3 v_n;   //  7 8 9
+	f64 Az, Azdot;  //  1  2
+	f64_vec3 B;     //  15 16 17
+	f64_vec2 pos;  // 18 19
+
+	// could we wipe over pos and then refresh from vertex object?
+	f64_vec2 temp;
+
+	// We really want pos to be its own object and Az,Azdot to be their own object.
+	// And instead of B, Curl A should probably live in an object with grad A and Lap A.
+
+	// First NVERTICES are for vertices, then it's triangles.
+	// This is what we essentially store, and the positions.
+
+}; // use separate object without structural info???
+
+// B is not often used; there is a case for putting it in a separate 'derivatives basket'
+// so that we can more easily handle 14 doubles in L1 cache.
+
+// vxy helps us not get confused and add to wrong v
+
+// Note that bus is what? 48 bytes = 6 doubles. We want 12 doubles in a struct max
+// let's say that. And 12 better than 10 or 11.
+
+// n,n,T,T,T = 5. 
+// 7 v
+// n+v+T = 12.  ** So no advantage to contiguous fetch there. **
+// Az,Azdot is another
+// pos is on its own
+// B, Lap A, grad A on their own
+
+
 class Vertex
 {
 private:
@@ -455,17 +533,18 @@ private:
 	long izTri[MAXNEIGH];
 	long izNeigh[MAXNEIGH]; // index the neighbouring vertices
 	long tri_len,neigh_len;
-	long Auxneigh_len, izNeighAux[AUXNEIGHMAX];
+//	long Auxneigh_len, izNeighAux[AUXNEIGHMAX];
+
 	// Do OO coefficient handling so that we can adapt later if necessary.
 	// memcpy sends Coeff_array contents to a local object when we want to use fast.
 
 public:
 	
 	Vector2 pos; 
-	macroscopic Ion,Elec,Neut; // mass, heat, mom
-	Vector3 A, E, B, Adot; // It's important to have a stored estimate of Adot.
+	//macroscopic Ion,Elec,Neut; // mass, heat, mom
+	//Vector3 A, E, B, Adot; // It's important to have a stored estimate of Adot.
 	// This is either the estimate at the same timeslice or at half a timeslice before (empirically)
-	real phi; 
+	//real phi, phidot; 
 
 	// Let's think about this - do we need a special A_k storage in order to create that information? Economise.
 
@@ -478,33 +557,33 @@ public:
 	// To recalculate:
 
 	real AreaCell; // Area of Voronoi, or QV, or whatever used.
-	Vector2 GradTe;
+//	Vector2 GradTe;
 
 	// scratch data:
-	real n,T;
-	Vector3 v, Temp; 
-	Vector2 temp2, centroid;
+//	real n,T;
+//	Vector3 v, Temp; 
+//	Vector2 temp2, centroid;
 
 	// other:
-	Vector2 a_pressure_ion, a_pressure_neut_or_overall, a_pressure_elec; 
+//	Vector2 a_pressure_ion, a_pressure_neut_or_overall, a_pressure_elec; 
 	// adding for now. See later if we can get rid of. 
 	
-	long iVolley; // also used for showing if it is selected to submesh 
+	int iVolley; // also used for showing if it is selected to submesh 
 	long iScratch; // can be used to index coarse vertex above in submesh
 	long iIndicator; // used in searches
 	// better look again at automatic submesh routine: how it worked?
 
-	Vector2 AdvectedPosition0; // or Displacement_default
-	Vector2 AdvectedPosition; // for solution of move. *We could just use pos in dest mesh. But means changing some code.*
-	Vector2 xdot, xdotdot; // just temporary - should find suitable scratch data
-	Vector2 ApplDisp;
+//	Vector2 AdvectedPosition0; // or Displacement_default
+//	Vector2 AdvectedPosition; // for solution of move. *We could just use pos in dest mesh. But means changing some code.*
+//	Vector2 xdot, xdotdot; // just temporary - should find suitable scratch data
+//	Vector2 ApplDisp;
 
 	// Not clear yet if we will need for Stage III:
-	Vector2 PressureMomAdditionRate[3]; // in terms of particle mass ; try to reuse smth else
+//	Vector2 PressureMomAdditionRate[3]; // in terms of particle mass ; try to reuse smth else
 
 	// Ohm's Law:
-	Vector3 v_e_0, v_i_0, v_n_0;
-	Tensor3 sigma_e, sigma_i, sigma_n;
+//	Vector3 v_e_0, v_i_0, v_n_0;
+//	Tensor3 sigma_e, sigma_i, sigma_n;
 	// We assume that v_e adapts instantaneously, but the other two "laws" are for stepping to t_k+1
 	// so that we can do the species relative displacement ready for Stage III.
 	// Maybe we can find a way to economise on all this memory use. Remember though there are 100 coefficients. 6 x 4 x 4 = 96.
@@ -513,7 +592,7 @@ public:
 	
 	// ODE solving:
 	// _____________
-
+	/*
 	real epsilon[NUM_EQNS_2];
 	real coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2];
 	//real coeff[MAXNEIGH][NUM_EQNS_1][NUM_AFFECTORS_1]; // we can collate effects on Iz via neighs...
@@ -580,30 +659,30 @@ public:
 	// Heap coefficients:
 	// Finest ClearCoefficients should also redimension them according to neigh_len;
 	// for auxiliary we use a different way to clear and add coefficients.
-
+	*/
 
 
 	inline Vertex() {
-		iLevel = -1;
+	//	iLevel = -1;
 		this->ClearTris();
 		this->ClearNeighs();
-		this->ClearCoarseIndexList();
-		ClearAuxNeighs();
-		memset(&(sigma_i),0,sizeof(Tensor3));
+	//	this->ClearCoarseIndexList();
+	//	ClearAuxNeighs();
+/*		memset(&(sigma_i),0,sizeof(Tensor3));
 		memset(&(sigma_e),0,sizeof(Tensor3));
 		memset(&(sigma_n),0,sizeof(Tensor3));
-	}
+	*/}
 
 	long inline GiveMeAnIndex() const
 	{
 		return izTri[0];
 	}
-	long inline GetCoarseIndex(int i)
+	/*	long inline GetCoarseIndex(int i)
 	{
 		return iCoarseIndex[i];
 	}
 		
-	void inline Vertex::CopyDataFrom(Vertex * pSrc)
+	void inline CopyDataFrom(Vertex * pSrc)
 	{
 		A = pSrc->A;
 		this->Adot = pSrc->Adot;
@@ -617,9 +696,9 @@ public:
 		this->phi = pSrc->phi;
 		this->pos = pSrc->pos;
 		// can same class access object's private data?
-	}
+	}*/
 
-	void inline Vertex::CopyLists(Vertex * pSrc)
+	void inline CopyLists(Vertex * pSrc)
 	{
 		flags = pSrc->flags;
 		has_periodic = pSrc->has_periodic;
@@ -630,21 +709,30 @@ public:
 		// can same class access object's private data?
 	}
 
-	long inline Vertex::GetNeighIndexArray(long * arr)
+	long inline GetNeighLen(void)
+	{
+		return neigh_len;
+	}
+
+	long inline GetTriLen(void)
+	{
+		return tri_len;
+	}
+	long inline GetNeighIndexArray(long * arr) const
 	{
 		memcpy(arr,izNeigh,sizeof(long)*neigh_len);
 
 		return neigh_len;
 	}
-
-	long inline Vertex::GetAuxNeighIndexArray(long * arr)
+	/*
+	long inline GetAuxNeighIndexArray(long * arr)
 	{
 		memcpy(arr,izNeighAux,sizeof(long)*Auxneigh_len);
 
 		return Auxneigh_len;
-	}
+	}*/
 
-	void inline Vertex::SetNeighIndexArray(long * arr, long len)
+	void inline SetNeighIndexArray(long * arr, long len)
 	{
 		if (len > MAXNEIGH) {
 			printf("neighs > MAXNEIGH. [1] \n");
@@ -654,23 +742,23 @@ public:
 		memcpy(izNeigh,arr,sizeof(long)*len);
 		neigh_len = len;
 	} // never called?
-
-	void inline Vertex::GetCoefficients(real * coefflocal, int iNeigh) // ?
+	/*
+	void inline GetCoefficients(real * coefflocal, int iNeigh) // ?
 	{
 		if (iNeigh >= neigh_len) {
-			printf("error iNeigh >= len Vertex::GetCoefficients\n");
+			printf("error iNeigh >= len GetCoefficients\n");
 			return;
 		}
 		memcpy(coefflocal, &(coeff[iNeigh].co[0][0]), sizeof(real)*NUM_AFFECTORS_1*NUM_EQNS_1);
-	}
+	}*/
 
-	long inline Vertex::GetTriIndexArray(long * arr)
+	long inline GetTriIndexArray(long * arr) const
 	{
 		memcpy(arr,izTri, sizeof(long)*tri_len);
 
 		return tri_len;
 	}
-	void inline Vertex::SetTriIndexArray(long * arr, long len)
+	void inline SetTriIndexArray(long * arr, long len)
 	{
 		if (len > MAXNEIGH) {
 			printf("tris > MAXNEIGH. [1]");
@@ -687,8 +775,9 @@ public:
 	void inline ClearNeighs()
 	{
 		neigh_len = 0;
-		ZeroCoefficients();
+	//	ZeroCoefficients();
 	}
+	/*
 	void inline ClearAuxNeighs()
 	{
 		Auxneigh_len = 0;
@@ -719,7 +808,7 @@ public:
 		iCoarseIndex[coarse_len] = iVertex;
 		coarse_len++;
 	}
-	bool inline Vertex::RemoveCoarseIndexIfExists(long index)
+	bool inline RemoveCoarseIndexIfExists(long index)
 	{
 		int i = 0;
 		while ((i < coarse_len) && (iCoarseIndex[i] != index)) ++i;
@@ -728,7 +817,7 @@ public:
 		memmove(iCoarseIndex+i,iCoarseIndex+i+1,sizeof(long)*(coarse_len-i));
 		return true;
 	}
-	void inline Vertex::AddToCoefficients(int iNeigh,real coeff_addition[4][4])
+	void inline AddToCoefficients(int iNeigh,real coeff_addition[4][4])
 	{
 		int const maxi = NUM_EQNS_1*NUM_AFFECTORS_1;
 		real *pf64 = &(coeff_addition[0][0]);
@@ -758,7 +847,7 @@ public:
 		};
 	}
 
-	int Vertex::AddNeighbourIfNecessaryAux (long iNeigh)
+	int AddNeighbourIfNecessaryAux (long iNeigh)
 	{
 		// this is for adding to the 'geometrically connected' array for auxiliary vertices.
 		int i;
@@ -775,10 +864,10 @@ public:
 		Auxneigh_len++;
 		return Auxneigh_len-1;
 	}
+	*/
 
-
-
-	int Vertex::AddNeighbourIfNecessary(
+	/*
+	int AddNeighbourIfNecessary(
 					long iNeigh, char rotate_here_rel_to_there)
 	{
 		int i;
@@ -813,15 +902,36 @@ public:
 		}
 		return i;
 	}
+	*/
 
-	void inline Vertex::AddNeighbourIndex(long index)
+	void inline AddNeighbourIndex(long index)
 	{
 		if (neigh_len < MAXNEIGH) {
 			izNeigh[neigh_len] = index;
-			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+
+			// need this on some occasion:
+//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
 
 			neigh_len++;			
 		}  else {
+			printf("error: neigh_len >= MAXNEIGH and attempted add neigh\n");
+		};
+	}
+
+	void inline AddUniqueNeighbourIndex(long index)
+	{
+		for (int i = 0; i < neigh_len; i++)
+			if (izNeigh[i] == index) return;
+
+		if (neigh_len < MAXNEIGH) {
+			izNeigh[neigh_len] = index;
+
+			// need this on some occasion:
+			//			memset(&(coeff[neigh_len].co[0][0]),0,sizeof(real)*NUM_EQNS_1*NUM_AFFECTORS_1);
+
+			neigh_len++;
+		}
+		else {
 			printf("error: neigh_len >= MAXNEIGH and attempted add neigh\n");
 		};
 	}
@@ -829,13 +939,13 @@ public:
 	bool inline RemoveNeighIndexIfExists(long index)
 	{
 		int i = 0;
-		while ((i < neigh_len) && (izTri[i] != index)) ++i;
+		while ((i < neigh_len) && (izNeigh[i] != index)) ++i;
 		if (i == neigh_len) return false;
 		neigh_len--;
 		memmove(izNeigh+i,izNeigh+i+1,sizeof(long)*(neigh_len-i));
 		return true;
 	}
-	void inline Vertex::AddTriIndex(long index)
+	void inline AddTriIndex(long index)
 	{
 		if (tri_len < MAXNEIGH) {
 			izTri[tri_len] = index;
@@ -844,7 +954,7 @@ public:
 			printf("error: tri_len >= MAXNEIGH and attempted add tri\n");
 		};
 	}
-	bool inline Vertex::RemoveTriIndexIfExists(long index)
+	bool inline RemoveTriIndexIfExists(long index)
 	{
 		int i = 0;
 		while ((i < tri_len) && (izTri[i] != index)) ++i;
@@ -857,7 +967,9 @@ public:
 	int Save(FILE * fp);
 	int Load(FILE * fp);
 	
-	Vector2 Vertex::PopulateContiguousPosition__Guesswork(Vertex * pVertex);
+	Vector2 PopulateContiguousPosition__Guesswork(Vertex * pVertex);
+
+//	void CreateMajorPolygon(Triangle * T, ConvexPolygon & cp);
 };
 
 
@@ -887,42 +999,68 @@ public:
 	
 	// change most of these to inline and put them here:
 
-	void Triangle::PopulatePositions(Vector2 & u0, Vector2 & u1, Vector2 & u2) const
+	bool inline MakeSureCornersAnticlockwise()
+	{
+		f64_vec2 pos0, pos1, pos2;
+		this->MapLeftIfNecessary(pos0, pos1, pos2);
+		// dot product of vectors from pos2 should be...
+
+		f64_vec2 vec01 = pos1 - pos0; 
+		f64_vec2 vec02 = pos2 - pos0;
+		f64 cross = vec01.x*vec02.y - vec01.y*vec02.x;
+
+		// Let's say 1 is to right of 0, 2 is up. Then cross is +. So we want cross to be +.
+		if (cross < 0.0) {
+			Vertex * temp = cornerptr[1];
+			cornerptr[1] = cornerptr[2];
+			cornerptr[2] = temp;
+			return true;
+		};
+		return false;
+	}
+
+	bool inline has_corner(Vertex * pTest)
+	{
+		return ((cornerptr[0] == pTest) || (cornerptr[1] == pTest) || (cornerptr[2] == pTest));
+	}
+
+	void PopulatePositions(Vector2 & u0, Vector2 & u1, Vector2 & u2) const
 	{
 		u0 = cornerptr[0]->pos;
 		u1 = cornerptr[1]->pos;
 		u2 = cornerptr[2]->pos;
 	};
 
-	void Triangle::MapLeftIfNecessary(Vector2 & u0, Vector2 & u1, Vector2 & u2) const;
-	real Triangle::GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const;
-	real Triangle::GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC);
+	void MapLeftIfNecessary(Vector2 & u0, Vector2 & u1, Vector2 & u2) const;
+	real GetDomainIntersectionArea(bool bUseOwnCoords, Vector2 u[3]) const;
+	real GetDomainIntersectionAreaROC(Vector2 u[3],int iWhichMove,Vector2 ROC);
 
-	void Triangle::CreateCoordinates_rel_to_vertex(Vertex * pVertex,Vector2 & u1, Vector2 & u2, Vector2 & u3);
-	bool inline Triangle::has_vertex(Vertex * pVertex)
+	void CreateCoordinates_rel_to_vertex(Vertex * pVertex,Vector2 & u1, Vector2 & u2, Vector2 & u3);
+	bool inline has_vertex(Vertex * pVertex)
 	{
 		return ((cornerptr[0] == pVertex) || (cornerptr[1] == pVertex) || (cornerptr[2] == pVertex));
 	}
 
-	int Triangle::GetCentreOfIntersectionWithInsulator(Vector2 & result);
+	int GetCentreOfIntersectionWithInsulator(Vector2 & result);
 
-	void Triangle::CalculateCircumcenter(Vector2 & cc, real * pdistsq);
+	void CalculateCircumcenter(Vector2 & cc, real * pdistsq);
+	Vector2 RecalculateCentroid();
 	Vector2 RecalculateCentroid(real InnermostFrillCentroidRadius,real OutermostFrillCentroidRadius);
-	Vector2 Triangle::GetContiguousCent_AssumingCentroidsSet(Vertex * pVertex);
-	real Triangle::ReturnAngle(Vertex * pVertex);
+	Vector2 GetContiguousCent_AssumingCentroidsSet(Vertex * pVertex);
+	real ReturnAngle(Vertex * pVertex);
 
 	Vector3 GetAAvg() const;
-	//void Triangle::GenerateContiguousCentroid(Vector2 * pCentre, Triangle * pContig);
+	//void GenerateContiguousCentroid(Vector2 * pCentre, Triangle * pContig);
 
 	void GuessPeriodic(void);
-	void inline Triangle::GetParity(int parity[3]) const
+	void inline GetParity(int parity[3]) const
 	{
 		parity[0] = (cornerptr[0]->pos.x > 0.0)?1:0;
 		parity[1] = (cornerptr[1]->pos.x > 0.0)?1:0;
 		parity[2] = (cornerptr[2]->pos.x > 0.0)?1:0;
 	}
 
-	int inline Triangle::GetLeftmostIndex() const
+	int inline GetLeftmostIndex() const
 	{
 		// Note: we could put an argument for returning the one with leftmost gradient x/y
 		int c1 = 0;
@@ -933,7 +1071,7 @@ public:
 		return c1;
 	}
 
-	int inline Triangle::GetRightmostIndex() const
+	int inline GetRightmostIndex() const
 	{
 		int c1 = 0;
 		if (cornerptr[1]->pos.x/cornerptr[1]->pos.y > cornerptr[0]->pos.x/cornerptr[0]->pos.y)
@@ -943,23 +1081,23 @@ public:
 		return c1;
 	}
 
-	int Triangle::GetCornerIndex(Vertex * pVertex);
+	int GetCornerIndex(Vertex * pVertex);
 	Vertex * GetOtherBaseVertex(Vertex * pVertex);
 	int FindNeighbour(Triangle * pTri);
 
-	void Triangle::RecalculateEdgeNormalVectors(bool normalise);
-	real Triangle::ReturnNormalDist(Vertex * pOppVert);
-	void Triangle::GetEdgeLengths(real edge_length[]);
+	void RecalculateEdgeNormalVectors(bool normalise);
+	real ReturnNormalDist(Vertex * pOppVert);
+	void GetEdgeLengths(real edge_length[]);
 
-	real Triangle::GetWeight(Vertex * pVertex); // ?
+	real GetWeight(Vertex * pVertex); // ?
 
-	void Triangle::Return_grad_Area(Vertex *pVertex, real * p_dA_by_dx, real * p_dA_by_dy);
+	void Return_grad_Area(Vertex *pVertex, real * p_dA_by_dx, real * p_dA_by_dy);
 
-	int Triangle::Save(FILE * fp,Vertex * pVertArray, Triangle *pTriArray);
-	int Triangle::Load(FILE * fp, Vertex * pVertArray, Triangle * pTriArray);
+	int Save(FILE * fp,Vertex * pVertArray, Triangle *pTriArray);
+	int Load(FILE * fp, Vertex * pVertArray, Triangle * pTriArray);
 	// saving and loading needed or not??
 
-	real Triangle::GetArea(void) const
+	real GetArea(void) const
 	{
 		Vector2 u[3];
 		MapLeftIfNecessary(u[0],u[1],u[2]);
@@ -987,26 +1125,26 @@ public:
 	
 	//char InferRelativeWrapping(Vertex * pVert, Vertex * pVertDisco);
 
-	Vertex * Triangle::ReturnOtherSharedVertex(Triangle * pTri,Vertex * pVertex);
+	Vertex * ReturnOtherSharedVertex(Triangle * pTri,Vertex * pVertex);
 	Vertex * ReturnUnsharedVertex(Triangle * pTri2, int * pwhich = 0);
 		
-	//void Triangle::SetTriangleVertex(int which, Vertex * pVert);
+	//void SetTriangleVertex(int which, Vertex * pVert);
 		
 	int TestAgainstEdge(real x, real y, 
 							int c1, // the "start" of the relevant edge
 							int other, // the point opposite the relevant edge
 							Triangle ** ppNeigh);
 
-	real Triangle::GetPossiblyPeriodicDistCentres(Triangle * pTri, int * prela);
+	real GetPossiblyPeriodicDistCentres(Triangle * pTri, int * prela);
 
 	bool TestAgainstEdges(real x,real y, Triangle ** ppNeigh);
 	bool TestAgainstEdges(float x,float y, Triangle ** ppNeigh);
 	
-	void Triangle::ReturnPositionOtherSharedVertex_conts_tranche(Triangle * pTri, Vertex * pVert, Vector2 * pResult);
+	void ReturnPositionOtherSharedVertex_conts_tranche(Triangle * pTri, Vertex * pVert, Vector2 * pResult);
 
-	void Triangle::CalculateIntersectionArea(Triangle & tri2); 
+	void CalculateIntersectionArea(Triangle & tri2); 
 	
-	char Triangle::InferRelativeWrapping(Vertex * pVert, Vertex * pVertDisco);
+	char InferRelativeWrapping(Vertex * pVert, Vertex * pVertDisco);
 };
 
 //class AuxTriangle : public Triangle // note: cannot do inheritance in CUDA very well?
@@ -1104,17 +1242,30 @@ public:
 // prefer array of struct.
 */
 
-
+real CalculateAngle(real x, real y);
+real GetPossiblyPeriodicDistSq(Vector2 & vec1, Vector2 & vec2);
 
 class TriMesh
 {
 public:
 	
-	Vertex * X;                        
-	Triangle * T;
 	Vertex * Xdomain; // pointer to start of movable vertices.
 	// Or for tri-data-based, pointer to start of insulator vertices.
-	
+#ifndef DYNAMIC_MEMORY
+	Vertex X[NUMVERTICES];
+	Triangle T[NUMTRIANGLES];
+	plasma_data pData[NMINOR]; // TRIANGLES FIRST THEN VERTICES
+#else
+	Vertex * X;
+	Triangle * T;
+	plasma_data * pData;
+#endif
+
+	f64 AreaMinorArray[NMINOR]; 
+	long TriMinorNeighLists[NUMTRIANGLES][6]; 
+	char TriMinorPBCLists[NUMTRIANGLES][6];
+	char MajorTriPBC[NUMVERTICES][MAXNEIGH];  
+
 	long numVertices, numTriangles, numTrianglesAllocated,
 		numRows, numInnerVertices, numDomainVertices;
 	long numInnermostRow, numOutermostRow, numLastRowAux[NUM_COARSE_LEVELS];
@@ -1133,35 +1284,35 @@ public:
 	// The following used for the Iz equation in ODE solve:
 		
 	long numStartZCurrentRow, numEndZCurrentRow; // for verts
-
 	long numReverseJzTris; // now put tris on edge of anode since offset
+	long numStartZCurrentTriangles, numEndZCurrentTriangles;
 
 	long StartAvgRow;
-	Matrix Coarsest;
-	Matrix LUphi;
+//	Matrix Coarsest;
+//	Matrix LUphi;
 	real scratchval;
-
-	dd_real EzTuning; // ?!
+	
+//	dd_real EzTuning; // ?!
 	
 	Vertex * AuxX[NUM_COARSE_LEVELS];  
 	Triangle * AuxT[NUM_COARSE_LEVELS]; 
-
+	
 	long numAuxVertices[NUM_COARSE_LEVELS];
 	long numAuxTriangles[NUM_COARSE_LEVELS];
 	long numTrianglesAuxAllocated[NUM_COARSE_LEVELS];
 	long numRowsAux[NUM_COARSE_LEVELS];
 	long numInnermostRowAux[NUM_COARSE_LEVELS];
-
-	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];;
+	
+	real Iz_prescribed, Epsilon_Iz, Epsilon_Iz_aux[NUM_COARSE_LEVELS];
 	// hmm, why not dd_real?
-
-	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
+	
+//	qd_or_d Epsilon_Iz_coeff_On_PhiAnode;
 	//Epsilon_Iz_coeff_On_TuningFactor;
 	// Ez = TuneFac*pVertex->temp2.y
 	// Making qd_or_d to be consistent with the rest of 'gamma' calculation.
 
-	qd_or_d PhiAnode, PhiAnode_aux[NUM_COARSE_LEVELS]; // Auxiliary addition to Eext.
-	qd_or_d Epsilon_Iz_constant, Epsilon_Iz_Default[NUM_COARSE_LEVELS];
+//	qd_or_d PhiAnode, PhiAnode_aux[NUM_COARSE_LEVELS]; // Auxiliary addition to Eext.
+//	qd_or_d Epsilon_Iz_constant, Epsilon_Iz_Default[NUM_COARSE_LEVELS];
 	// plays same role as Epsilon_Iz_constant
 
 	// match data types for finest.
@@ -1193,11 +1344,19 @@ public:
 	
 	// For now, get rid of most member functions and keep only those that we know we shall use.
 
+	void TriMesh::RebuildNeighbourList(Vertex * pVertex);
+	long TriMesh::Flips(long Trilist[], short num);
+
+	void CalcUpwindDensity_on_tris(f64 * p_n_upwind, f64 * p_nn_upwind, f64_vec2 * p_v_overall_tris);
+
+	void CompareSystems();
+
 	// New additions:
 
-	void TriMesh::SetTriangleVertex(int iWhichCorner, Triangle * pTri, Vertex * pVertex);
-	void TriMesh::Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
-	int TriMesh::SeekVertexInsideTriangle(Vertex * v1,
+	int InitialiseOriginal(int token);
+	void SetTriangleVertex(int iWhichCorner, Triangle * pTri, Vertex * pVertex);
+	void Recalculate_TriCentroids_VertexCellAreas_And_Centroids();
+	int SeekVertexInsideTriangle(Vertex * v1,
 									  Vertex * v2,
 									  Vertex * v3,          // up to 4 points to check for
 									  Vertex * v4,           // in order of preference;
@@ -1205,7 +1364,18 @@ public:
 									  Vertex ** ppReturnVert,  // address for returning guilty vertex
 									  Triangle ** ppReturnTri); // address for returning triangle that contains
 
-	void TriMesh::ShiftVertexPositionsEquanimity();
+	void ShiftVertexPositionsEquanimity();
+
+
+	void AntiAdvectAzAndAdvance(f64 h_use, TriMesh * pUseMesh, f64_vec2 IntegratedGrad_Az[NMINOR], TriMesh * pDestMesh);
+	void AdvectPositions_CopyTris(f64 h_use, TriMesh * pDestMesh, f64_vec2 * p_v);
+	void SetupMajorPBCTriArrays();
+	void EnsureAnticlockwiseTriangleCornerSequences_SetupTriMinorNeighboursLists();
+	void CalculateOverallVelocities(f64_vec2 p_v[]);
+	void EnsureAnticlockwiseTriangleCornerSequences();
+	void AdvanceDensityAndTemperature(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, NTrates NTadditionrate[NUMVERTICES]);
+
+	void TriMesh::Integrate_using_iScratch(TriMesh * pX_src, bool bIntegrate_all);
 
 	// *******************************************************************
 	// *****																	  *****
@@ -1213,33 +1383,39 @@ public:
 	// *******************************************************************
 	
 	// to go in MeshUtil.cpp:
-	int TriMesh::CreateEquilateralAuxMesh(int iLevel); // don't do it -- create on the fly we said supposedly.
-	int TriMesh::CreateEquilateralAuxMeshScrewPinch(int iLevel);
-	void TriMesh::InitialiseScrewPinch();
-	void TriMesh::InitialPopulateScrewPinch(void); // it will need some clever rethink.
+	int CreateEquilateralAuxMesh(int iLevel); // don't do it -- create on the fly we said supposedly.
+	int CreateEquilateralAuxMeshScrewPinch(int iLevel);
+	void InitialiseScrewPinch();
+	void InitialPopulateScrewPinch(void); // it will need some clever rethink.
 
 	int Initialise(int token);                             
 	// the token allows us to identify the object in giving error messages.
 
-	real TriMesh::SolveConsistentTemperature(real n, real n_n);
-	void TriMesh::InitialPopulate(void);  // call this once initial positions are obtained.
+	real SolveConsistentTemperature(real n, real n_n);
+	void InitialPopulate(void);  // call this once initial positions are obtained.
 	void InitialisePeriodic(void);			  
-
 	// *******************************************************************
 	// *****                                                         *****
 	// *********       Mesh Maintenance / utility functions:     *********
 	// *******************************************************************
 	
-	void TriMesh::CreateTilingAndResequence(TriMesh * pDestMesh);
+	void Wrap(void);
+	void Resprinkle(TriMesh * pX_src, TriMesh * pX_aux); 
 
+	void CreateTilingAndResequence(TriMesh * pDestMesh);
+
+	void CreateTilingAndResequence2(TriMesh * pDestMesh);
+
+	void CreateTilingAndResequence_with_data(TriMesh * pDestMesh);
+	
 	// in MeshUtil.cpp:
-	int Load(char * filename);
-	int Save(char * filename);
-	int SaveText(char * filename);
+	int Load(const char * filename);
+	int Save(const char * filename);
+	int SaveText(const char * filename);
 
-	void TriMesh::SetTriangle(Triangle * pTri, Vertex * pV1, Vertex * pV2, Vertex * pV3);	// not to be called with impunity
+	void SetTriangle(Triangle * pTri, Vertex * pV1, Vertex * pV2, Vertex * pV3);	// not to be called with impunity
 
-	Triangle * TriMesh::SetAuxTri(int iLevel, long iVertex1, long iVertex2, long iVertex3);
+	Triangle * SetAuxTri(int iLevel, long iVertex1, long iVertex2, long iVertex3);
 
 		// in mesh.cpp:
 //	int SeekVertexInsideTriangle(Vertex * v1,
@@ -1251,28 +1427,30 @@ public:
 //									  Triangle ** ppReturnTri); // address for returning triangle that contains
 		// Not clear that ever gets used. ?
 
-	// void TriMesh::ShiftVertexPositionsEquanimity(); // no
+	// void ShiftVertexPositionsEquanimity(); // no
 	
-	void TriMesh::ResetTriangleNeighbours(Triangle * pTri); 
+	int ResetTriangleNeighbours(Triangle * pTri); 
 
 	// this is for if first, triangles are sorted anticlockwise: (??)
-	void TriMesh::RefreshVertexNeighboursOfVerticesOrdered(void) ; // ??
-		
-	void TriMesh::RefreshHasPeriodic(); // see if any triangles had by a vertex are periodic triangles.
-
-	void TriMesh::RecalculateEdgeNormals(bool bNormalise);
+	void RefreshVertexNeighboursOfVerticesOrdered(void) ; // TRIANGLE CORNERS must already be sorted anticlockwise each triangle.
 	
-	void TriMesh::RefreshHasPeriodicAux(int iLevel);
+	void ReorderTriAndNeighLists(Vertex * pVertex);
 
-//	Vertex * TriMesh::Search_for_iVolley_equals (Vertex * pSeed,int value);
-//	AuxVertex * TriMesh::Search_for_iVolley_equals (AuxVertex * pSeed,int value, int iLevel);
-//	void TriMesh::RefreshIndexlists(); // did what?	
-	//AuxTriangle * TriMesh::ReturnPointerToOtherSharedTriangleAux(
+	void RefreshHasPeriodic(); // see if any triangles had by a vertex are periodic triangles.
+
+	void RecalculateEdgeNormals(bool bNormalise);
+	
+	void RefreshHasPeriodicAux(int iLevel);
+
+//	Vertex * Search_for_iVolley_equals (Vertex * pSeed,int value);
+//	AuxVertex * Search_for_iVolley_equals (AuxVertex * pSeed,int value, int iLevel);
+//	void RefreshIndexlists(); // did what?	
+	//AuxTriangle * ReturnPointerToOtherSharedTriangleAux(
 	//	AuxVertex * pVert,
 	//	AuxVertex * pOther,
 	//	AuxTriangle * p_not_this_one,
 	//	int iLevel);	
-	//void TriMesh::Recalculate_Kappa_NuHeart_and_Ratio (Vertex * pVertex, int species);
+	//void Recalculate_Kappa_NuHeart_and_Ratio (Vertex * pVertex, int species);
 	// don't think we want such a function.
 
 	// Search functions, in MeshUtil.cpp //was basics.cpp:
@@ -1281,7 +1459,7 @@ public:
 				Triangle * pTri,              // seed for beginning triangle search
 				real x, real y	); 
 
-	void TriMesh::SearchIntersectionsForPolygon(ConvexPolygon & cp,Triangle * pTri, 
+	void SearchIntersectionsForPolygon(ConvexPolygon & cp,Triangle * pTri, 
 							real coefficient, macroscopic * pVars, int varcode, real area);
 	
 	Triangle * ReturnPointerToOtherSharedTriangle(
@@ -1289,21 +1467,21 @@ public:
 		Vertex * pOther,
 		Triangle * p_not_this_one, int iLevel = -1);
 
-	//AuxTriangle * TriMesh::GetAuxTriangleContaining(AuxVertex * pAux1,
+	//AuxTriangle * GetAuxTriangleContaining(AuxVertex * pAux1,
 	//						   AuxVertex * pAux2,
 	//						   int iLevel);
 
-	//long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, int iLevel); // version for equilateral aux mesh
-	//long TriMesh::SearchForAuxTriangleContainingPoint(real x, real y, 
+	//long SearchForAuxTriangleContainingPoint(real x, real y, int iLevel); // version for equilateral aux mesh
+	//long SearchForAuxTriangleContainingPoint(real x, real y, 
 	//											  int iLevel,
 	//									AuxTriangle * pTriSeed);
 
-	bool TriMesh::FindOtherNeigh(Vertex * pVertex1, Vertex * pVertex2, Vertex * pVertNot, Vertex ** ppOtherNeigh);
+	bool FindOtherNeigh(Vertex * pVertex1, Vertex * pVertex2, Vertex * pVertNot, Vertex ** ppOtherNeigh);
 	
-	Vertex * TriMesh::Search_for_iVolley_equals (Vertex * pSeed,int value);
+	Vertex * Search_for_iVolley_equals (Vertex * pSeed,int value);
 
-	void TriMesh::CreateVolleys(int separation) ;
-	void TriMesh::CreateTriangleVolleys();
+	void CreateVolleys(int separation) ;
+	void CreateTriangleVolleys();
 
 	// Mesh maintenance proper:
 	// ________________________
@@ -1314,25 +1492,26 @@ public:
 	int Disconnect(Vertex * pVertDisco, Triangle *pTriContain); // return index of next point to disconnect, or -1 on total success
 	int FullDisconnect(Vertex * pVertDisco, Triangle *pTriContain); // return number disconnected
 	void ReconnectLastPointInDiscoArray(void);
-	void TriMesh::DebugTestWrongNumberTrisPerEdge(void);
-	bool TriMesh::DebugTestForOverlaps();
+	void DebugTestWrongNumberTrisPerEdge(void);
+	bool DebugTestForOverlaps();
 
-	void TriMesh::CheckDoubleEdges(int numTris);
+	void CheckDoubleEdges(int numTris);
 
-	void Redelaunerize(bool exhaustion, bool bReplace);	
+	long Redelaunerize(bool exhaustion, bool bReplace);	
 	void Flip(Triangle * pTri1, Triangle * pTri2, int iLevel);//, int flag = 0);
-	//void TriMesh::Flip(AuxTriangle *pTri1, AuxTriangle * pTri2, int iLevel);
+	//void Flip(AuxTriangle *pTri1, AuxTriangle * pTri2, int iLevel);
 	// we will need something similar if we do construct Delaunay at each level.
 
-	bool TriMesh::DebugDetectDuplicateNeighbourInList(Vertex * pVertex);
+	bool DebugDetectDuplicateNeighbourInList(Vertex * pVertex);
 
-	real TriMesh::SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAcceptance);
-	void TriMesh::SwimMesh(TriMesh * pSrcMesh);
+	real SwimVertices(TriMesh * pSrcMesh, real coefficient, real * pAcceptance);
+	void SwimMesh(TriMesh * pSrcMesh);
 	
-	void TriMesh::CopyMesh(TriMesh * pDestMesh);
-	void TriMesh::SurveyCellMassStats(real * pAvgMass, real * pMassSD, real * pMinMass, real * pMaxMass, int * piMin);
+	void CopyMesh(TriMesh * pDestMesh);
+	void SurveyCellMassStats(real * pAvgMass, real * pMassSD, real * pMinMass, real * pMaxMass, int * piMin);
 	
 
+	void Create4Volleys();
 	
 	// *******************************************************************
 	// *****                                                         *****
@@ -1340,49 +1519,98 @@ public:
 	// *******************************************************************
 	
 	
-	void TriMesh::Set_nT_and_Get_Pressure(int species);
+	void Set_nT_and_Get_Pressure(int species);
 
-	void TriMesh::InterpolateAFrom(TriMesh * pSrcMesh);
-	void TriMesh::CreateShards(Vertex * pVertex, ShardData & shard_data);
-	void TriMesh::GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc);
-	void Advance(TriMesh *); // does whole step by calling some of the following.
-	int TriMesh::AdvancePinch(TriMesh * pDestMesh);
-	void TriMesh::RecalculateCentroid(Vertex * pVertex); // needed access to tris !
+	void Create_integral_grad_nT_on_minors(ShardModel n_shards_n[NUMVERTICES], ShardModel n_shards[NUMVERTICES], three_vec3 AdditionRateNv[NMINOR]);
 
-	//void TriMesh::MakePressureAccelData(int code);
+	void Average_n_T_to_tris_and_calc_centroids_and_minorpos();
 
-	void TriMesh::RestoreSpeciesTotals(TriMesh * pSrc);
-	void TriMesh::ReportIonElectronMass();
+	void CalculateIonisationRates(NTrates NTadditionrates[NUMVERTICES]);
 
-	void TriMesh::GetBFromA();
+	void AccumulateDiffusiveHeatRateAndCalcIonisation(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
+	void AccumulateDiffusiveHeatRateAndCalcIonisationOld(f64 h_use, NTrates NTadditionrates[NUMVERTICES]);
 
-	void TriMesh::GetGradTeOnVertices();
+	void CreateShardModelOfDensities_And_SetMajorArea();
 
-	void TriMesh::GetCurlBcOver4Pi();
+	void AccumulateAdvectiveMassHeatRate(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES],
+		f64 * p_n_upwind,
+		f64 * p_nn_upwind);
+	void AccumulateAdvectiveMassHeatRateOld(f64_vec2 p_overall_v[NMINOR], NTrates AdditionalNT[NUMVERTICES]);
 
-	//void TriMesh::SearchIntersectionsOfTriangle(Triangle * pTri, Vector2 & x0, Vector2 & x1, Vector2 & x2,
+	void Create_A_from_advance(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
+	void FinalStepAz(f64 hstep, f64 ROCAzduetoAdvection[], TriMesh * pDestMesh, f64 Az_array[]);
+	void AdvanceAz(f64 hstep, f64 ROCAzduetoAdvection[], f64 Az_array[]);
+	void GetLap(real Az_array[], real LapAz_array[]);
+	void InterpolateVarsAndPositions(TriMesh * pTargetMesh, TriMesh * pEndMesh, f64 ppn);
+
+	//void AccumulateAdvectiveMomRate(f64_vec2 p_overall_v[NMINOR], ShardModel n_shards_n[NUMVERTICES], ShardModel n_shards[NUMVERTICES], three_vec3 AdditionRateNv[NMINOR]);
+
+	void Add_ViscousMomentumFluxRates(three_vec3 * AdditionalMomRates); // 0 for now
+
+	void GetLapCoeffs();
+
+	void JLS_for_Az_bwdstep(int iterations, f64 h_use);
+
+	void InferMinorDensitiesFromShardModel();
+
+	void DivideBbyAreaMinor(); // stupid -- change to use IntegratedCurlAz as smth
+
+	void Create_momflux_integral_grad_nT_and_gradA_LapA_CurlA_on_minors(
+		f64_vec2 p_overall_v[NMINOR],
+		//ShardModel n_shards_n[NUMVERTICES], 
+		//ShardModel n_shards[NUMVERTICES],
+		three_vec3 AdditionRateNv[NMINOR]);
+	
+	void Accelerate2018(f64 h_use, TriMesh * pUseMesh, TriMesh * pDestMesh, f64 evaltime_plus, bool bFeint,
+		bool bUse_n_dest_for_Iz);
+		//three_vec3 AdditionRateNv[NMINOR], 
+		//f64_vec2 IntegratedGradAz[NMINOR], f64 IntegratedLapAz[NMINOR]);
+
+	void InterpolateAFrom(TriMesh * pSrcMesh);
+	void CreateShards(Vertex * pVertex, ShardData & shard_data);
+	void GiveAndTake(ShardData & shard_data, Vertex * pVDest,Vertex * pVSrc);
+
+	void Advance(TriMesh * pDestMesh, TriMesh * pHalfMesh);
+	
+	// does whole step by calling some of the following.
+	int AdvancePinch(TriMesh * pDestMesh);
+	void RecalculateCentroid(Vertex * pVertex); // needed access to tris !
+
+
+	//void MakePressureAccelData(int code);
+
+	void RestoreSpeciesTotals(TriMesh * pSrc);
+	void ReportIonElectronMass();
+
+	void GetBFromA();
+
+	void GetGradTeOnVertices();
+
+	void GetCurlBcOver4Pi();
+
+	//void SearchIntersectionsOfTriangle(Triangle * pTri, Vector2 & x0, Vector2 & x1, Vector2 & x2,
 	//				real mass, real heat, Vector3 & mom, int species, real area, bool src_periodic_flag);
 	
-	void TriMesh::CollectFunctionals();
-	real TriMesh::Report_Min_nTotal_Tri();
-	void TriMesh::ReportTextOutput1DData(TriMesh * pDestMesh);
+	void CollectFunctionals();
+	real Report_Min_nTotal_Tri();
+	void ReportTextOutput1DData(TriMesh * pDestMesh);
 		
-	void TriMesh::ZeroCellData();
-	void TriMesh::RepopulateCells(TriMesh * pDestMesh, int code);
+	void ZeroCellData();
+	void RepopulateCells(TriMesh * pDestMesh, int code);
 
-	int TriMesh::DebugCheckTemperaturesPositive();
+	int DebugCheckTemperaturesPositive();
 
 
 	// Evolution:
 	// __________
 /*
-	void TriMesh::Collect_maxh4_bEndpt(
+	void Collect_maxh4_bEndpt(
 		DTArray * pROCflux_old, DTArray * pROCflux_now,
 		DTArray * pROCflux_output,	DTArray * pROCflux_predict,
 		f64 hstep_old,f64 hstep,
 		f64 * pmaxh4_running, bool * pbEndptFluxEffectAgree);
 
-	void TriMesh::Collect_maxh4_bEndpt_VA(
+	void Collect_maxh4_bEndpt_VA(
 				ROCArray * pROCflux_old,
 				ROCArray * pROCflux_now,
 				ROCArray * pROCflux_output,
@@ -1390,118 +1618,118 @@ public:
 				f64 hstep_old, f64 hstep,
 				f64 * pmaxh4_running, bool * pbEndptFluxEffectAgree);
 
-	void TriMesh::Setup_Data_for_CUDA(
+	void Setup_Data_for_CUDA(
 							fluid3BE * pCelldata_host
 						//	structural * pCellinfo_host, 
 						//	vertinfo * pVertinfo_host,
 						//	vertdata * pVertdata_host
 							);
 */
-	void TriMesh::PopulateSystdata_from_this(
+/*	void PopulateSystdata_from_this(
 							Systdata * pSystdata
 							);
 
-	void TriMesh::Populate_this_fromSystdata(
+	void Populate_this_fromSystdata(
 							Systdata * pSystdata
 							);
-	
+	*/
 
 #ifdef CPU
-	void TriMesh::ViscosityAndAcceleration(real hsub);
-	void TriMesh::ComputeMomFlux(ROCArray * pOutput);
-	void TriMesh::InternalAcceleration(real hsub, ROCArray * pROCinitial, ROCArray * pROCfinal,
+	void ViscosityAndAcceleration(real hsub);
+	void ComputeMomFlux(ROCArray * pOutput);
+	void InternalAcceleration(real hsub, ROCArray * pROCinitial, ROCArray * pROCfinal,
 		Heat_storage * pHeat_storage);
-	void TriMesh::IonisationAndHeat(real hsub, ROCHeat * pdTinitial, ROCHeat * pdTfinal,
+	void IonisationAndHeat(real hsub, ROCHeat * pdTinitial, ROCHeat * pdTfinal,
 		Momentum_storage * pMomentum_storage,
 		real h_full);
-	void TriMesh::HeatRoutine(real hsub);
-	void TriMesh::ComputeHeatFlux(ROCHeat * pROC);
+	void HeatRoutine(real hsub);
+	void ComputeHeatFlux(ROCHeat * pROC);
 #endif
 
-	void TriMesh::GetGradTe(Vertex * pVertex);
+	void GetGradTe(Vertex * pVertex);
 
-	real TriMesh::GetOutwardHeatFlux ( Triangle * pTri, Triangle * pTriDest, int iEdge, int species );
+	real GetOutwardHeatFlux ( Triangle * pTri, Triangle * pTriDest, int iEdge, int species );
 
-	//void TriMesh::AccelerateIons_or_ComputeOhmsLawForRelativeVelocity(Triangle * pTri, int code);
+	//void AccelerateIons_or_ComputeOhmsLawForRelativeVelocity(Triangle * pTri, int code);
 
 	// Advection-related
 	// __________________
 
-	void TriMesh::CreateFeintHeavyDisplacement(Triangle * pTri,
+	void CreateFeintHeavyDisplacement(Triangle * pTri,
 		                        Vector3 * p_v_ion_k, Vector3 * p_v_neut_k);
-	void TriMesh::CreateMeshDisplacement_zero_future_pressure();
+	void CreateMeshDisplacement_zero_future_pressure();
 
-	void TriMesh::ZeroVertexPositions();
-	void TriMesh::SolveForAdvectedPositions(TriMesh * pDestMesh);
+	void ZeroVertexPositions();
+	void SolveForAdvectedPositions(TriMesh * pDestMesh);
 
-	void TriMesh::PlaceAdvected_Triplanar_Conservative_IntoNewMesh(
+	void PlaceAdvected_Triplanar_Conservative_IntoNewMesh(
 													int which_species,
 													TriMesh * pDestMesh,
 													 int code,
 													 int bDoCompressiveHeating);
-	void TriMesh::AverageVertexPositionsAndInterpolate(TriMesh * pSrcMesh, bool bInterpolatePositions);
+	void AverageVertexPositionsAndInterpolate(TriMesh * pSrcMesh, bool bInterpolatePositions);
 	
-	void TriMesh::SendMacroscopicPolygon(ConvexPolygon & cp,Triangle * pTriSeed, bool src_periodic,
+	void SendMacroscopicPolygon(ConvexPolygon & cp,Triangle * pTriSeed, bool src_periodic,
 									 real coefficient,macroscopic * pVars, int varcode);
 
-	void TriMesh::ApplyVertexMoves(int which_species,TriMesh * pDestMesh);
+	void ApplyVertexMoves(int which_species,TriMesh * pDestMesh);
 
-	real TriMesh::SendAllMacroscopicPlanarTriangle(ConvexPolygon & cp,Triangle * pTriSeed, int src_periodic,
+	real SendAllMacroscopicPlanarTriangle(ConvexPolygon & cp,Triangle * pTriSeed, int src_periodic,
 									 fluidnvT * pvertvars0, fluidnvT * pvertvars1, fluidnvT * pvertvars2,
 									 int species, int code);
 
-	void TriMesh::FinishAdvectingMesh(TriMesh * pDestMesh);
+	void FinishAdvectingMesh(TriMesh * pDestMesh);
 
 	// Solver-related
 	//________________
 	
-	void TriMesh::ExtractData_PerformJRLS();
+	void ExtractData_PerformJRLS();
 
-	real inline TriMesh::GetIzPrescribed(real const t);
+	real inline GetIzPrescribed(real const t);
 
-	void TriMesh::ComputeOhmsLaw();
+	void ComputeOhmsLaw();
 	
-	void TriMesh::RecalculateEpsilonVertex(long iVertex, int iLevel);
+	void RecalculateEpsilonVertex(long iVertex, int iLevel);
 
-	void TriMesh::SpitOutGauss();
+	void SpitOutGauss();
 
-	void TriMesh::GaussSeidel(int iLevel, int iVolley);
-	void TriMesh::IterationsJRLS(int iLevel, int iterations);
-	void TriMesh::IterationsJRLS_individual_equations(int iLevel, int iterations);
-	void TriMesh::RunLU(int const iLevel, bool bRefreshCoeff);
+	void GaussSeidel(int iLevel, int iVolley);
+	void IterationsJRLS(int iLevel, int iterations);
+	void IterationsJRLS_individual_equations(int iLevel, int iterations);
+	void RunLU(int const iLevel, bool bRefreshCoeff);
 
-	void TriMesh::IterationsJRLS_Az(int iLevel, int iterations);
-	void TriMesh::RunLU_Az(int const iLevel, bool bRefreshCoeff);
-	void TriMesh::CalculateEpsilons();
-	void TriMesh::CalculateEpsilonsAbsolute(real RSS_Absolute_array[4]);
-	void TriMesh::CalculateEpsilonAux4(int iLevel);
+	void IterationsJRLS_Az(int iLevel, int iterations);
+	void RunLU_Az(int const iLevel, bool bRefreshCoeff);
+	void CalculateEpsilons();
+	void CalculateEpsilonsAbsolute(real RSS_Absolute_array[4]);
+	void CalculateEpsilonAux4(int iLevel);
 
-	void TriMesh::CalculateEpsilonsAz();
-	void TriMesh::CalculateEpsilonsAbsoluteAz(real RSS_Absolute_array[4]);
-	void TriMesh::CalculateEpsilonAuxAz(int iLevel);
+	void CalculateEpsilonsAz();
+	void CalculateEpsilonsAbsoluteAz(real RSS_Absolute_array[4]);
+	void CalculateEpsilonAuxAz(int iLevel);
 
-	//void TriMesh::CreateSeed(TriMesh * pMesh_with_A_k); // ?
+	//void CreateSeed(TriMesh * pMesh_with_A_k); // ?
 
-	void TriMesh::Solve_A_phi(bool const bInitial, real const time_back_for_Adot_if_initial = 0.0);
+	void Solve_A_phi(bool const bInitial, real const time_back_for_Adot_if_initial = 0.0);
 
-	void TriMesh::Solve_Az( real const time_back_for_Adot_if_initial );
+	void Solve_Az( real const time_back_for_Adot_if_initial );
 
-	//void TriMesh::Calculate_Epsilons_Gauss_Ampere(void);
-	//void TriMesh::RunIterations(int iLevel, long iterations);	
-	//void TriMesh::RunIterations4(int iLevel, long iterations);	
+	//void Calculate_Epsilons_Gauss_Ampere(void);
+	//void RunIterations(int iLevel, long iterations);	
+	//void RunIterations4(int iLevel, long iterations);	
 		
-	void TriMesh::Lift_to_coarse_eps(int iLevel);
-	void TriMesh::Affect_vars_finer(int iLevel);
-	void TriMesh::Lift_to_coarse_eps_Az(int iLevel);
-	void TriMesh::Affect_vars_finer_Az(int iLevel);
+	void Lift_to_coarse_eps(int iLevel);
+	void Affect_vars_finer(int iLevel);
+	void Lift_to_coarse_eps_Az(int iLevel);
+	void Affect_vars_finer_Az(int iLevel);
 	
-	void TriMesh::EstimateInitialOhms_zz(void);
-	//void TriMesh::EstimateInitialEandJz(void);
+	void EstimateInitialOhms_zz(void);
+	//void EstimateInitialEandJz(void);
 
-	void TriMesh::CreateAuxiliarySubmeshes(bool);
-	void TriMesh::Set_AuxNeighs_And_GalerkinCoefficients(int iLevel);
-	void TriMesh::Set_AuxNeighs_And_GalerkinCoefficientsAz(int iLevel);
-	void TriMesh::AccumulateCoefficients(
+	void CreateAuxiliarySubmeshes(bool);
+	void Set_AuxNeighs_And_GalerkinCoefficients(int iLevel);
+	void Set_AuxNeighs_And_GalerkinCoefficientsAz(int iLevel);
+	void AccumulateCoefficients(
 			Vertex * pAffected, //pAffector, 
 					//pVertex->iCoarseIndex[iAffectedIndex],
 			int iNeigh,//pVertex->iCoarseIndex[iAffectorIndex],
@@ -1510,15 +1738,15 @@ public:
 			
 			// for debug:
 			long iFinePhi, long iIntermediate);
-	void TriMesh::Accumulate_coeffself_unary(
+	void Accumulate_coeffself_unary(
 		Vertex * pAffected, //long iAffected,
 		real,
 		real coeff_self[NUM_EQNS_2][NUM_AFFECTORS_2], 
 		char rotatedest);
 
-	// void TriMesh::CreateMultimeshCoefficients(bool bConstruct_iCoarseTriangle);
-	void TriMesh::CreateODECoefficients( bool bInitial);
-	void TriMesh::CreateODECoefficientsAz( bool bInitial);
+	// void CreateMultimeshCoefficients(bool bConstruct_iCoarseTriangle);
+	void CreateODECoefficients( bool bInitial);
+	void CreateODECoefficientsAz( bool bInitial);
 	
 	
 	// *******************************************************************
@@ -1526,9 +1754,9 @@ public:
 	// *********              Graphics functions:                *********
 	// *******************************************************************
 
-	void TriMesh::GosubMakeGraphs(int GraphDisplaySwitch, TriMesh * pMesh_with_A_k);
+	void GosubMakeGraphs(int GraphDisplaySwitch, TriMesh * pMesh_with_A_k);
 
-	void TriMesh::SetVerticesAndIndicesAux(int iLevel,
+	void SetVerticesAndIndicesAux(int iLevel,
 									   VertexPNT3 * vertices,
 										  DWORD * indices,
 									long numVerticesMax,
@@ -1539,45 +1767,46 @@ public:
 									int offset_vcolour,
 									float zeroplane, float yscale,
 									int NTris = 0)		;
-	//void TriMesh::Setup_DivE_rho_phi_eps_Graphing();	
+	//void Setup_DivE_rho_phi_eps_Graphing();	
 
-	//void TriMesh::SetupJ_A2_rho_Graphing();
-	real TriMesh::ReturnMaximumData(int offset);
-	void TriMesh::ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
-	void TriMesh::ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
-	void TriMesh::ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin);
-	
-	void TriMesh::Setup_J() ;
-	void TriMesh::Reset_vertex_nvT(int species) ;
+	//void SetupJ_A2_rho_Graphing();
+	real ReturnMaximumData(int offset);
+	void ReturnMaxMinData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
+	void ReturnL5Data(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
+	void ReturnMaxMinDataAux(int iLevel, int offset, real * pmax, real * pmin);
+	void Return3rdmaxData(int offset, real * pmax, real * pmin, bool bDisplayInner) const;
 
-	long TriMesh::GetVertsRightOfCutawayLine_Sorted(long VertexIndexArray[],
-										real radiusArray[]) const;
+	void Setup_J() ;
+	void Reset_vertex_nvT(int species) ;
 
-	real TriMesh::ReturnMaximumDataAux(int iLevel, int offset);
+	long GetVertsRightOfCutawayLine_Sorted(long VertexIndexArray[],
+										real radiusArray[], bool bUseInner) const;
 
-	void TriMesh::SetupAccelGraphs();
-	//void TriMesh::SetupJBEGraphing();
-	//void TriMesh::SetupSigmaJEGraphing();
-	//void TriMesh::SetupOhmsEzGraphing();
-	//void TriMesh::SetupAizJzGraphing();
-	void TriMesh::CalculateTotalGraphingData();
+	real ReturnMaximumDataAux(int iLevel, int offset);
 
-	real TriMesh::ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const;
-	real TriMesh::ReturnL4_Velocity(int offset_v, bool bDisplayInner) const;
-	real TriMesh::ReturnMaximum3DMagnitude(int offset_v, bool bDisplayInner) const;
-	real TriMesh::ReturnL4_3DMagnitude(int offset_v, bool bDisplayInner) const;
-	real TriMesh::ReturnMaximumVelocityAux(int iLevel, int offset);
-	//void TriMesh::SetupJGraphing();			// set A2 to J at vertex
+	void SetupAccelGraphs();
+	//void SetupJBEGraphing();
+	//void SetupSigmaJEGraphing();
+	//void SetupOhmsEzGraphing();
+	//void SetupAizJzGraphing();
+	void CalculateTotalGraphingData();
 
-	//void TriMesh::SetupJ_E_rho_Graphing();
+	real ReturnMaximumVelocity(int offset_v, bool bDisplayInner) const;
+	real ReturnL4_Velocity(int offset_v, bool bDisplayInner) const;
+	real ReturnMaximum3DMagnitude(int offset_v, bool bDisplayInner) const;
+	real ReturnL4_3DMagnitude(int offset_v, bool bDisplayInner) const;
+	real ReturnMaximumVelocityAux(int iLevel, int offset);
+	//void SetupJGraphing();			// set A2 to J at vertex
+
+	//void SetupJ_E_rho_Graphing();
 
 	long GetNumVerticesGraphics(void);
 	
-	long TriMesh::GetNumVerticesGraphicsAux(int iLevel);
+	long GetNumVerticesGraphicsAux(int iLevel);
 
-	long TriMesh::GetNumKeyVerticesGraphics(long * pnumTrianglesKey) const;
+	long GetNumKeyVerticesGraphics(long * pnumTrianglesKey) const;
 
-	void TriMesh::SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real maximum_v, int colourflag) const;
+	void SetVerticesKeyButton(VertexPNT3 * vertices, DWORD * indices, real maximum_v, int colourflag) const;
 
 	void SetVerticesAndIndices(VertexPNT3 * vertices[],        // better to do in the other class...
 							        DWORD * indices[], // let's hope this means an array of pointers

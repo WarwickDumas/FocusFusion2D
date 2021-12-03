@@ -325,7 +325,7 @@ __device__ __forceinline__ f64 Calculate_Kappa_Neutral(f64 n_i, f64 T_i, f64 n_n
 	f64 s_in_visc, s_nn_visc;
 
 	s_in_visc = Estimate_Ion_Neutral_Viscosity_Cross_section(T_i*one_over_kB);
-	s_nn_visc = Estimate_Neutral_Neutral_Viscosity_Cross_section(T_n*one_over_kB);
+	s_nn_visc = Estimate_Neutral_Neutral_Viscosity_Cross_section_d(T_n*one_over_kB);
 
 	// Oh. So there's another two we have to port.
 	// Yet for ion eta it's so different, apparently.
@@ -361,7 +361,7 @@ __device__ __forceinline__ void Get_kappa_parallels_and_nu_hearts
 	sqrt_Te = sqrt(T_e);
 	
 	s_in_visc = Estimate_Ion_Neutral_Viscosity_Cross_section(T_i*one_over_kB);
-	s_nn_visc = Estimate_Neutral_Neutral_Viscosity_Cross_section(T_n*one_over_kB);
+	s_nn_visc = Estimate_Neutral_Neutral_Viscosity_Cross_section_d(T_n*one_over_kB);
 	
 	nu_in_visc = n_n*s_in_visc*ionneut_thermal;
 	nu_nn_visc = n_n*s_nn_visc*sqrt(T_n/m_n);
